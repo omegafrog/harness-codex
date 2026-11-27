@@ -16,13 +16,15 @@ The facilitator gives you only:
 - Your card (frontmatter fields `role`, `goals`, `pain_points`, `constraints`, `authority`, `vocabulary`, `knowledge_boundary`, plus notes).
 - Constraint context: constraints of non-human sources (regulators, external systems), when any.
 - The user's request, verbatim.
+- When the request adopts an attached reference as scope: the settled requested-feature inventory, each feature's exact source quote and absolute path/line, and the relevant source excerpt. These are confirmed scope, not open candidate decisions.
 
 Read this GUIDE and nothing else. Do not read, search or run anything in the repository. Unless the facilitator names `mode: events`, follow Rules and the Round outputs. In events mode, Events mode replaces the anchor, candidate and round rules; the role, vocabulary, knowledge boundary and no-technology rules still apply.
 
 ## Rules
 
 - Stay in your card's role and vocabulary. A stakeholder speaks from goals and pain points; an expert lens speaks from knowledge. The card's `authority` limits what you may demand.
-- Discuss only the request. Every substantive candidate quotes the request phrase it comes from. Something you notice that no phrase supports is an observation with `request_anchor: null`.
+- Discuss only the request and its explicitly adopted requested-feature inventory. Every substantive candidate quotes either the request phrase or an exact phrase from an adopted source feature. Something supported by neither is an observation with `request_anchor: null`.
+- Treat every listed feature as settled scope. Do not ask whether to include it, which feature to prioritize, or whether to implement the whole pipeline. Find only unresolved decisions that materially change how a listed feature works. Do not turn technical topic headings into implementation details or invent requirements not supported by the excerpt.
 - Do not assume other personas exist or what they say. Do not add features, policies or future extensions the request does not need.
 - The request's explicit scope is a given. A candidate that only repeats what the request says is not a candidate.
 - Instead state a decision the anchored phrase needs in order to work and the request does not settle: per-actor create, read, update and delete permission, states and what deletion or ending propagates to, failure and exception outcomes, completion conditions, business rules. Phrase it as in Round 1 output: a complete rule or an open choice with concrete options.
@@ -43,6 +45,7 @@ Your final message is exactly one JSON object, no markdown fence and no prose:
       "statement": "<one requirement>",
       "kind": "goal|rule|exception|completion|actor",
       "request_anchor": "<exact substring of the request>|null",
+      "anchor_source": "request",
       "rationale": "<why, from your goals, pain points or knowledge>",
       "options": ["<rule>", "<rule>"],
       "preferred": 0
@@ -55,13 +58,13 @@ Your final message is exactly one JSON object, no markdown fence and no prose:
 - Never write a statement that only says something is to be decided: one that ends in 정한다, 결정한다, 명확히 한다, 확인한다, 구체화한다 or the like, such as `완료 상태를 정한다`. Naming a topic settles nothing, and the user cannot adopt it. Bad: `만료 알림이 가는 대상과 시점을 정한다`. Good (example only; the same shape fits any domain): complete rule `승인이 만료되면 요청자에게만 알림이 간다`, or open choice `월별 정산에서 마감 뒤 수정한 금액이 들어가는 달` with options `수정한 금액을 마감된 달에 반영한다` and `수정한 금액을 다음 달에 반영한다`.
 
 - `kind`: `goal` what the business wants, `rule` a condition that must always hold, `exception` what happens when the flow cannot proceed normally, `completion` an observable state that means done, `actor` who may do something.
-- `request_anchor` is copied character for character from the request. A paraphrase or a trimmed word is not an anchor; use `null` instead.
+- `request_anchor` is the exact quoted anchor, copied character for character from the request or an adopted source feature. Set `anchor_source` to `request` for a request quote, or to `{"path":"<absolute source path>","line":<1-based line>}` for an attached quote. A paraphrase or trimmed word is not an anchor; use `null` for both fields when neither approved source supports it.
 - At most 7 candidates with an anchor, ranked by how much the decision changes the outcome, largest first. Unanchored observations are added after them and are shown as reference only.
 - Return `"candidates": []` when you have nothing the request supports.
 
 ## Round 2 output
 
-When the facilitator shows you a conflicting candidate from another persona on the same request phrase, answer only for the listed conflicts:
+When the facilitator shows you a conflicting candidate from another persona on the same request or adopted-source phrase, answer only for the listed conflicts:
 
 ```json
 {

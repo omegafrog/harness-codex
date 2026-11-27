@@ -75,6 +75,15 @@ function sourceMaterialAnchor(phrase, materials) {
   return null;
 }
 
+function adoptedFeatureSourceAnchor(phrase, features, sourceMaterials) {
+  const feature = features.find((row) => unquote(row['요청 문구']) === phrase);
+  if (!feature) return null;
+  const material = sourceMaterialAnchor(phrase, sourceMaterials);
+  if (!material) return null;
+  const citation = clean(feature['출처']);
+  return citation.includes(material.path) && citation.includes(`:${material.line}`) ? material : null;
+}
+
 const broadGoal = (feature) => /(?:개선|고도화|최적화|강화|개편|혁신|구축|개발|업그레이드)$/.test(clean(feature));
 
 // ---- deferred rows -----------------------------------------------------------------------------------------------------------
@@ -186,6 +195,22 @@ export function checkStakeholderAnalysis({ request, analysis, status, questions 
     if (structuredSource && !materialAnchors.length) errors.push(error('REQUESTED_FEATURES_NOT_EXTRACTED', 'The request names attached source material with multiple sections or items, but no requested feature is anchored in it. Extract concrete capabilities from that source before asking about unresolved content.'));
   }
   if (!legacyCandidates) {
+    const candidateRows = tables.filter(isCandidateTable).flatMap((table) => table.rows);
+    for (const row of candidateRows) {
+      const anchor = unquote(row['요청 앵커']);
+      if (!anchor) {
+        errors.push(error('CANDIDATE_ANCHOR_MISSING', `${clean(row.CAND)} has no 요청 앵커. Cite an exact phrase from the request or an adopted attached feature; unanchored observations do not belong in the candidate table.`));
+        continue;
+      }
+      if (text.includes(anchor)) continue;
+      const material = adoptedFeatureSourceAnchor(anchor, features, sourceMaterials);
+      if (!material) {
+        errors.push(error('CANDIDATE_ANCHOR_INVALID', `${clean(row.CAND)} quotes "${anchor}", which is not an exact substring of the request or an adopted attached feature. Move it to 요청 범위 밖 관찰 or use an exact adopted-feature anchor.`));
+        continue;
+      }
+      const evidence = clean(row['근거']);
+      if (!evidence.includes(material.path) || !evidence.includes(`:${material.line}`)) errors.push(error('CANDIDATE_SOURCE_MISSING', `${clean(row.CAND)} is anchored in attached material at ${material.path}:${material.line}; cite that exact path and line in 근거.`));
+    }
     for (const row of deferringCandidates(analysis)) {
       errors.push(error('CANDIDATE_DEFERS_DECISION', `${clean(row.CAND)} states "${clean(row['내용'])}", which only says that something is to be decided, so adopting it settles nothing. Rewrite it as a complete rule with an observable outcome, or as 2-3 concrete options asked as the choice (record the persona wording as 원문 in 근거); when it depends on another answer record the decision as 보류(후속) and do not ask it now.`));
     }
@@ -205,8 +230,8 @@ export function checkStakeholderAnalysis({ request, analysis, status, questions 
     }
     for (const row of table.rows) {
       const anchor = unquote(row['요청 앵커']);
-      if (anchor && text.includes(anchor)) {
-        errors.push(error('ANCHORED_CANDIDATE_EXCLUDED', `The observation of ${clean(row['제안자'])} ("${clean(row['관찰'])}") anchors on "${anchor}", which is in the request. A candidate whose anchor is an exact substring of the request is a CAND-xx asked to the user (it may refine a requested feature); move it to the candidate table and ask it.`));
+      if (anchor && (text.includes(anchor) || adoptedFeatureSourceAnchor(anchor, features, sourceMaterials))) {
+        errors.push(error('ANCHORED_CANDIDATE_EXCLUDED', `The observation of ${clean(row['제안자'])} ("${clean(row['관찰'])}") anchors on "${anchor}", which is in the request or an adopted attached feature. A candidate grounded in requested scope is a CAND-xx asked to the user (it may refine a requested feature); move it to the candidate table and ask it.`));
       }
     }
   }
