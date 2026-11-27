@@ -277,7 +277,7 @@ test('installed readiness checks required files without validating their content
     const doctorRun = spawnSync(process.execPath, [join(root, '.harness/scripts/harness-doctor.mjs'), '--project', root, '--json'], { cwd: root, encoding: 'utf8' });
     const installedDoctor = JSON.parse(doctorRun.stdout);
     assert.equal(doctorRun.status, 1);
-    assert.ok(installedDoctor.diagnostics.some((item) => item.code === 'project_preparation_required'));
+    assert.equal(installedDoctor.diagnostics.some((item) => item.code === 'project_preparation_required'), false, 'Doctor does not gate Harness updates on workflow preparation documents');
     assert.equal(installedDoctor.diagnostics.some((item) => item.code === 'installer_unlocked_file' && item.path.endsWith('/.harness/harness.yaml')), false);
     const { runDoctor } = await import('../.harness/src/doctor/doctor.mjs');
     const doctor = await runDoctor({ root, sourceRoot });
@@ -385,7 +385,7 @@ test('installed local tracker progresses split plans without Beads', async () =>
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('compose preserves a failed worktree when project preparation is incomplete', async () => {
+test('compose enters requirements workflow when project preparation documents are incomplete', async () => {
   const parent = await mkdtemp(join(tmpdir(), 'compose-unprepared-'));
   const root = join(parent, 'project');
   try {
@@ -402,17 +402,16 @@ test('compose preserves a failed worktree when project preparation is incomplete
     await writeFile(join(root, 'docs/agents/EXEC.md'), 'legacy execution instructions');
     git('add', 'CONTEXT.md', 'CONTEXT-MAP.md', 'docs', '.harness/agents');
     git('-c', 'user.name=Contract', '-c', 'user.email=contract@example.test', 'commit', '-m', 'Incomplete setup');
-    const diagnostic = (await runDoctor({ root, sourceRoot })).diagnostics.find(({ code }) => code === 'project_preparation_required');
-    assert.equal(diagnostic?.severity, 'error');
-    assert.deepEqual(diagnostic.violations, ['Missing or invalid file: .harness/agents/EXEC.md']);
-    assert.throws(() => execFileSync(process.execPath, [join(root, '.harness/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', 'compose-1'], { cwd: root, stdio: 'pipe' }), /Command failed/);
+    assert.equal((await runDoctor({ root, sourceRoot })).diagnostics.some(({ code }) => code === 'project_preparation_required'), false);
+    const composed = JSON.parse(execFileSync(process.execPath, [join(root, '.harness/scripts/harness-compose-workspace.mjs'), '--root', root, '--plan-set-id', 'calculator', '--request', '계산기', '--execution-id', 'compose-1'], { cwd: root, encoding: 'utf8' }));
+    assert.equal(composed.plan_set_id, 'calculator');
     const worktrees = git('worktree', 'list', '--porcelain').split('\n').filter((line) => line.startsWith('worktree ')).map((line) => line.slice(9));
     assert.equal(worktrees.length, 2);
-    const failed = JSON.parse(await readFile(join(worktrees[1], '.io/worktree.json'), 'utf8'));
-    assert.equal(failed.state, 'active');
-    assert.equal(failed.outcome, 'failed');
+    const active = JSON.parse(await readFile(join(worktrees[1], '.io/worktree.json'), 'utf8'));
+    assert.equal(active.state, 'active');
+    assert.equal(active.outcome ?? null, null);
     assert.equal(git('status', '--short'), '');
-    await finishWorkflowWorktree({ workspace_root: worktrees[1], repository_root: root, worktree_id: failed.worktree_id, outcome: 'failed' });
+    await finishWorkflowWorktree({ workspace_root: worktrees[1], repository_root: root, worktree_id: active.worktree_id, outcome: 'aborted' });
   } finally { await rm(parent, { recursive: true, force: true }); }
 });
 
@@ -1134,7 +1133,7 @@ test('compose creates input only in the worktree and leaves main without .io', a
     await writeExecutionInput(tree.workspace, mismatched, tree.plan_set_id);
     assert.throws(() => execFileSync(process.execPath, [join(tree.workspace, '.harness/scripts/harness-native-stage.mjs'), 'start', '--root', tree.workspace, '--worktree-ref', result.worktree_ref, '--execution-id', 'provider-mismatch'], { cwd: tree.workspace, stdio: 'pipe' }), /Execution provider must match/);
     await rm(join(tree.workspace, '.harness/agents/EXEC.md'));
-    await assert.rejects(validateSkillReturn({ root: tree.workspace, input: found.input, envelope }), /Project preparation incomplete/);
+    assert.equal((await validateSkillReturn({ root: tree.workspace, input: found.input, envelope })).valid, true, 'compose may hand off to requirements while implementation readiness is incomplete');
     await assert.rejects(readFile(join(root, '.io', 'runtime', 'orchestrator', 'workflow.json')), { code: 'ENOENT' });
     const { lstat } = await import('node:fs/promises');
     await assert.rejects(lstat(join(root, '.io')), { code: 'ENOENT' });

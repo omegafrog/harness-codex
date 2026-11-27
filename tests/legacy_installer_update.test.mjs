@@ -90,9 +90,7 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     const doctor = () => JSON.parse(spawnSync(process.execPath, [resolve(root, '.harness/scripts/harness-doctor.mjs'), '--project', root, '--json'], { encoding: 'utf8' }).stdout);
     const diagnostics = doctor().diagnostics;
     assert.ok(diagnostics.some((item) => item.code === 'installer_retired_file' && item.path === resolve(root, modifiedPath)));
-    const preparation = diagnostics.find((item) => item.code === 'project_preparation_required');
-    assert.ok(preparation.violations.includes('Missing or invalid file: .harness/agents/execution.json'));
-    assert.ok(!preparation.violations.some((item) => item.endsWith('/EXEC.md')));
+    assert.equal(diagnostics.some((item) => item.code === 'project_preparation_required'), false, 'Doctor checks the Harness installation, not workflow preparation documents');
     assert.equal(execFileSync('node', [resolve(root, '.harness/scripts/harness-doctor.mjs'), '--help'], { encoding: 'utf8' }).includes('Usage:'), true);
     const status = execFileSync('git', ['-C', root, 'status', '--short', '--untracked-files=all'], { encoding: 'utf8' });
     assert.match(status, /\.harness\/agents\/EXEC.md/);
@@ -101,7 +99,7 @@ test('legacy Doctor is backed up and updated while project files remain visible'
     assert.match(status, /to-ticket-plan_revision\.schema\.json/);
     assert.doesNotMatch(status, /\.harness\/scripts\/harness-doctor/);
     await rm(resolve(root, '.harness/agents/EXEC.md'));
-    assert.ok(doctor().diagnostics.find((item) => item.code === 'project_preparation_required').violations.includes('Missing or invalid file: .harness/agents/EXEC.md'));
+    assert.equal(doctor().diagnostics.some((item) => item.code === 'project_preparation_required'), false, 'missing project guidance is checked when a workflow needs it');
     await writeFile(resolve(root, '.harness/scripts/harness-doctor.mjs'), 'custom doctor');
     const lock = JSON.parse(await readFile(resolve(root, '.harness/harness-lock.json'), 'utf8'));
     delete lock.files['.harness/scripts/harness-doctor.mjs'];

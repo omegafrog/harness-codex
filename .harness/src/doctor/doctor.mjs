@@ -13,7 +13,6 @@ import { LEGACY_ASSETS } from '../installer/legacy-assets.mjs';
 import { PUBLIC_SKILLS } from '../installer/public-skills.mjs';
 import { isHarnessSourceCheckout } from '../installer/source-checkout.mjs';
 import { TRACKER_PUBLISH_WORKFLOWS, validateContextBudget } from "../workflow/stage-runtime.mjs";
-import { inspectProjectReadiness } from '../workflow/project-readiness.mjs';
 import { HARNESS_LOCK_PATH, LEGACY_HARNESS_LOCK_PATH } from '../installer/config-location.mjs';
 import { inspectRetiredProjectHooks } from '../installer/orchestrator-hook.mjs';
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
@@ -582,10 +581,6 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   await inspectExecutionAssets(repositoryRoot, diagnostics, sourceCheckout);
   if (!sourceCheckout && lockPath === DEFAULT_LOCK_PATH && !installation && await lstat(join(repositoryRoot, LEGACY_HARNESS_LOCK_PATH)).catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error))) {
     diagnostics.push(diagnostic('installer_layout_legacy', 'error', 'Harness uses the legacy installation layout. Run harness-codex update to move shared runtime files into .harness.', join(repositoryRoot, LEGACY_HARNESS_LOCK_PATH)));
-  }
-  if (installation?.files['.harness/src/workflow/project-readiness.mjs']) {
-    const readiness = await inspectProjectReadiness({ workspace_root: repositoryRoot });
-    if (readiness.status !== 'pass') diagnostics.push(diagnostic(readiness.reason, 'error', `Workflow compose is not ready: ${readiness.violations.join(', ')}. Update an older installation or run setup to prepare the missing project files.`, repositoryRoot, { violations: readiness.violations }));
   }
   await inspectStakeholderCards(repositoryRoot, diagnostics);
   await inspectAuthoring(repositoryRoot, diagnostics);

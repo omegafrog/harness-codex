@@ -479,9 +479,8 @@ export async function validateSkillReturn({ root, input, envelope, reopening = f
     const git = async (...args) => (await execFileAsync('git', args, { cwd: root, encoding: 'utf8' })).stdout.trim();
     const [branch, common] = await Promise.all([git('branch', '--show-current'), git('rev-parse', '--path-format=absolute', '--git-common-dir')]);
     requireValue(branch === record.branch && await realpath(common) === await realpath(record.common), 'Prepared worktree Git identity mismatch');
-    const { inspectProjectReadiness } = await import('./project-readiness.mjs');
-    const readiness = await inspectProjectReadiness({ workspace_root: root });
-    requireValue(readiness.status === 'pass', `Project preparation incomplete: ${readiness.violations.join(', ')}`);
+    // Compose is the entry to requirements work, which can create the project-owned
+    // preparation documents. Enforce readiness at implementation/dispatch gates instead.
     await resolveSkillBinding({ root, skill: 'workflow-compose' });
     validateContextBudget(await json(join(root, '.harness/context-budget.json')));
   }

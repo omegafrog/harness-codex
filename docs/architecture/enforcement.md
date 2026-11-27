@@ -147,7 +147,7 @@ orchestrator가 구현·계약 stage를 우회해 제품 코드, 테스트, `doc
 
 ## 구현 전 프로젝트 준비
 
-`inspectProjectReadiness`는 `.harness/agents/EXEC.md`, `.harness/agents/execution.json`, 컨텍스트 문서와 통합 계약 파일의 존재를 검사한다. install/update는 준비 상태를 출력하고 Doctor와 `workflow-compose`는 같은 검사에 실패하면 각각 `project_preparation_required`와 compose 실패를 반환한다. manifest 내용과 계약 정합성은 각각 실행 및 계약 gate가 검사한다. `implement`는 `--for-implementation` preflight를 적용하며 실제 wrapper dispatch는 `project_readiness` lifecycle check를 강제한다. 기본 workspace 검사는 setup과 계약 bootstrap을 허용한다.
+`inspectProjectReadiness`는 `.harness/agents/EXEC.md`, `.harness/agents/execution.json`, 컨텍스트 문서와 통합 계약 파일의 존재를 검사한다. 이 검사는 install/update, Doctor, 요구사항 준비를 위한 `workflow-compose`에서는 실행하지 않는다. wrapper의 구현 dispatch 및 구현 완료 gate에서 필요한 시점에 검사하고 누락 시 `project_preparation_required`로 차단한다. manifest 내용과 계약 정합성은 각각 실행 및 계약 gate가 검사한다. `implement`는 `--for-implementation` preflight를 적용하며 실제 wrapper dispatch는 `project_readiness` lifecycle check를 강제한다. 기본 workspace 검사는 setup과 계약 bootstrap을 허용한다.
 
 파일이 없을 때 caller는 setup의 source 조사와 sync-contracts를 수행하고 재검사한다. 기존 사용자 프로필·구현 commit·stash·tracker 상태를 보존한다. 형식 검사만으로 실제 검증 범위·모델의 의미를 증명하지 않으며 이 부분은 caller/독립 reviewer가 검토하고 실행 launcher가 실제 readiness를 검사한다.
 

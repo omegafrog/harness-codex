@@ -466,7 +466,7 @@ git rm --cached .codex/agents/<managed-profile>.toml
 
 설치/업데이트는 번들에 포함된 스킬을 직접 복사하며 별도 `npx skills` 설치에 의존하지 않는다. `update`는 Harness 관리 경로를 항상 최신 릴리스와 같게 맞춘다. 로컬에서 수정한 관리 파일은 백업한 뒤 최신본으로 교체하고, upstream에서 사라진 관리 자산은 수정 여부와 관계없이 백업한 뒤 삭제하며 lock 항목과 빈 디렉터리(구 `.codex/harness-runtime` 포함)도 정리한다. `--no-backup`이면 백업하지 않는다. `install`은 `--force` 없이는 로컬 수정을 보존한다. 이전 업데이트가 남긴 빈 Harness skill 디렉터리도 함께 지우며, Harness가 모르는 이름의 skill 디렉터리는 건드리지 않는다. PR 템플릿은 관리 자산이며 기존 사용자 템플릿도 기본 보존/force 백업 규칙을 따른다.
 
-설치·업데이트는 `Project readiness`를 별도로 보고한다. `project_preparation_required`이면 caller가 setup의 준비 복구와 내부 `sync-contracts` 절차로 실제 소스/CI/실행 지침을 조사해 실행 프로필·통합 계약을 보완하고 doctor를 재실행한다. 직접 구현은 `harness-workspace-preflight.mjs --workspace-root <workspace_root> --for-implementation --json`, wrapper dispatch는 같은 실제 gate를 통과해야 시작한다. 파일 누락을 구현 커밋 뒤까지 미루거나 빈 manifest로 완료 검사를 우회하지 않는다.
+설치·업데이트와 Doctor는 프로젝트 실행 준비 문서를 검사하지 않는다. 요구사항 흐름은 준비 문서가 없어도 시작할 수 있다. 구현 dispatch와 완료 gate가 실행에 필요한 `.harness/agents/EXEC.md`, `execution.json`, 컨텍스트 및 통합 계약 파일을 검사하고, 누락 시 구현 단계에서 차단한다. Harness 런타임 업데이트와 프로젝트 준비는 분리한다.
 
 ## 진행 상황 보기
 

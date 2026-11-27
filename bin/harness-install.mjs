@@ -279,7 +279,6 @@ async function main() {
     if (result.removed_lock_entries.length) console.log(`Retired lock entries: ${result.removed_lock_entries.join(", ")}`);
     if (result.removed_directories?.length) console.log(`Removed empty directories: ${result.removed_directories.join(", ")}`);
     if (result.skipped.length > 0) console.log(`Preserved: ${result.skipped.map((entry) => `${entry.path} (${entry.status})`).join(", ")}`);
-    await reportProjectReadiness(projectRoot, result.copied_guidance);
     await noteCodexUserHooks(projectRoot, options);
   }
 }
