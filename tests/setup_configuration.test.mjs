@@ -18,6 +18,15 @@ test('setup records a clear natural-language answer by its offered value', () =>
   assert.equal(document.answers[question.id], 'reconfigure');
 });
 
+test('setup records a chat-resolved direct value for a blank text question', () => {
+  const question = { id: 'Actuator Prometheus 전체 URL (실제 포트 포함)#1', type: 'text', current: '' };
+  const document = { setup_id: 'setup-test', status: 'needs_input', answers: {}, batch: { id: 'batch-test', call_id: 'accepted-call', questions: [question], received: {} } };
+  assert.throws(() => recordResolvedSetupAnswer(document, JSON.stringify({ question_id: question.id, value: ' ' })), /not offered/);
+  const result = recordResolvedSetupAnswer(document, JSON.stringify({ question_id: question.id, value: 'http://127.0.0.1:8080/actuator/prometheus' }));
+  assert.equal(result.can_continue, true);
+  assert.equal(document.answers[question.id], 'http://127.0.0.1:8080/actuator/prometheus');
+});
+
 test('installed setup reuses current configuration and ignores old answer hashes', async () => {
   const root = await mkdtemp(join(tmpdir(), 'harness-setup-reuse-'));
   const sourceRoot = fileURLToPath(new URL('../', import.meta.url));

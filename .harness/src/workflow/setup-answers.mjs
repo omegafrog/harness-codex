@@ -111,11 +111,12 @@ export function recordResolvedSetupAnswer(document, input) {
   const question = batch.questions.find(({ id }) => id === reply?.question_id);
   if (!question || typeof reply.value !== 'string') throw new Error('Resolved answer does not match a question of the current setup batch');
   const option = question.options?.find(({ value }) => value === reply.value);
-  if (!option) throw new Error(`Resolved value is not offered for ${question.id}`);
+  const value = option?.value ?? (question.type === 'text' && reply.value.trim() ? reply.value.trim() : undefined);
+  if (value === undefined) throw new Error(`Resolved value is not offered for ${question.id}`);
   const previous = batch.received[question.id];
-  if (previous !== undefined && previous !== option.value) throw new Error(`Conflicting duplicate answer for ${question.id}`);
-  batch.received[question.id] = option.value;
-  document.answers[question.id] = option.value;
+  if (previous !== undefined && previous !== value) throw new Error(`Conflicting duplicate answer for ${question.id}`);
+  batch.received[question.id] = value;
+  document.answers[question.id] = value;
   return setupAnswerStatus(document);
 }
 
