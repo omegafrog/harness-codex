@@ -3,7 +3,7 @@ model_tier: low_performance
 ---
 # Workflow 준비
 
-primary checkout에서는 setup이 준비한 main 기준 commit에서 worktree를 생성한다. 기존 linked worktree에서는 `harness-compose-workspace.mjs`가 그 worktree를 그대로 연결한다. 준비 상태와 결과를 검증·기록한다. 준비 명령의 입력은 원본 요청과 실행 식별자이며, worktree 참조는 생성 후 산출물이다. setup의 session 출력은 원본 workspace에 둘 수 있으며 compose 실행 입력은 선택된 worktree에 기록한다.
+primary checkout에서는 orchestrator가 선택한 main 기준 commit에서 새 worktree를 생성한다. 사용자가 기존 linked worktree를 선택해 그 위치에서 다시 호출하면 `harness-compose-workspace.mjs`가 해당 worktree를 연결한다. 새 workflow를 시작할 때 현재 위치가 linked worktree여도 `primary_workspace_root`를 `--root`로 전달해 primary checkout에서 새 worktree를 만든다. 준비 상태와 결과를 검증·기록한다. 준비 명령의 입력은 원본 요청과 실행 식별자이며, worktree 참조는 생성 후 산출물이다. setup의 session 출력은 원본 workspace에 둘 수 있으며 compose 실행 입력은 선택된 worktree에 기록한다.
 
 새 workflow는 새로운 execution ID로 호출한다. 현재 위치가 기존 linked worktree이면 반환된 workspace가 현재 위치와 같은지 확인하고 새 worktree가 추가되지 않았는지 확인한다. 현재 worktree에 다른 workflow 기록이 있으면 보존하고 멈춘다. primary checkout에서 새로 생성할 때는 아래 검증을 사용한다. 생성 직전 Git에 등록된 worktree 목록을 확인하고, 이번 명령이 직접 반환한 `execution_id`와 `worktree_ref`가 입력 및 결과 기록과 일치하며 반환된 worktree가 생성 전 목록에 없음을 확인한다. 환경에 `HARNESS_WORKFLOW_BINDING`이 지정됐다면 반환된 정본 `worktree.json`의 binding이 같은지도 확인한다. 기존 결과 파일만 읽어 새 생성으로 처리하지 않는다. 불일치나 생성 실패는 그대로 보고하고 기존 worktree를 보존한다.
 

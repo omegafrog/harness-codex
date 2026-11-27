@@ -5,7 +5,7 @@ import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { existsSync } from 'node:fs';
 import { copyFile, lstat, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, resolve, relative, sep } from 'node:path';
+import { basename, dirname, join, resolve, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { bindSetupUi, publishSetupBatch, recordClaudeSetupReplies, recordResolvedSetupAnswer, recordSetupReplies, receiveSetupTranscript, setupAnswerStatus } from '../../.harness/src/workflow/setup-answers.mjs';
@@ -299,14 +299,8 @@ async function main() {
   const config = parseYaml(migrateAgentsText(oldConfig).text);
   const { inspectSetupConfiguration, hasTrackerConfiguration } = await import(new URL('../../.harness/src/workflow/project-readiness.mjs', import.meta.url));
   const existing = await inspectSetupConfiguration({ workspace_root: root, provider: runtimeProviderId });
-  const worktreeResult = await commandResult('git', ['worktree', 'list', '--porcelain']);
-  if (worktreeResult.status !== 0) throw new Error(`Git worktree 목록 확인 실패: ${worktreeResult.stderr || worktreeResult.error?.message}`);
-  const registeredWorktrees = [...worktreeResult.stdout.matchAll(/^worktree (.+)$/gm)].map((match) => resolve(match[1]));
-  const isExistingWorktree = registeredWorktrees.includes(root) && registeredWorktrees[0] !== root;
-  const branchResult = await commandResult('git', ['branch', '--show-current']);
-  const branch = branchResult.status === 0 ? branchResult.stdout.trim() : '';
   const runtimeProvider = runtimeProviderId === 'codex' ? 'Codex CLI' : runtimeProviderId === 'claude-code' ? 'Claude Code' : null;
-  questionContext = [runtimeProvider && `현재 실행 환경: ${runtimeProvider}.`, isExistingWorktree ? `현재 위치: 이미 생성된 linked worktree${branch ? ` (${branch})` : ''}. 이 setup은 현재 worktree를 유지합니다.` : `현재 위치: ${branch || '기본 저장소'}.`].filter(Boolean).join(' ');
+  questionContext = runtimeProvider ? `현재 실행 환경: ${runtimeProvider}.` : '';
   const hasExisting = Boolean(config.agents && Object.keys(config.agents).length || config.tracker?.mode);
   const existingProvider = runtimeProviderId || currentProviderOf(config), existingModels = providerAgents(config, existingProvider);
   const reuse = hasExisting && await choose('기존 설정을 사용하거나 다시 설정할까요?', [
@@ -314,8 +308,7 @@ async function main() {
   ], 'reuse', `현재 설정: provider ${existingProvider}, 모델 ${Object.entries(existingModels).filter(([key]) => key.endsWith('_model') && key !== 'default_model').map(([key, value]) => `${key}=${value}/${existingModels[key.replace('_model', '_reasoning_effort')] || '?'}`).join(', ') || '없음'}, tracker ${config.tracker?.mode || '미설정'}${config.tracker?.github?.repository ? ` (${config.tracker.github.repository} #${config.tracker.github.project_number || '?'})` : ''}, 관측성 ${config.observability?.victorialogs?.local?.enabled === true ? '사용' : config.observability?.victorialogs?.local?.enabled === false ? '끔' : '미설정'}`) === 'reuse';
   // Reusing or reconfiguring decides which of the later questions exist, so each of them is marked as depending on it.
   if (hasExisting && native) baseDependencies = [lastQuestionId];
-  const hasWorktreeDirectory = typeof config.worktrees?.directory === 'string' && isAbsolute(config.worktrees.directory) && !config.worktrees.directory.includes('\0');
-  if (reuse && hasWorktreeDirectory && existing.violations.every((item) => item.startsWith('Missing or invalid CONTEXT'))) {
+  if (reuse && existing.violations.every((item) => item.startsWith('Missing or invalid CONTEXT'))) {
     requireComplete();
     await prepareProjectFiles();
     await prepareCodexSubagentHook(existingProvider);
@@ -325,10 +318,6 @@ async function main() {
   // The tier names are shared with the skill declarations and workflow stages that choose among them.
   const tiers = AGENT_TIERS;
   const hasText = (value) => typeof value === 'string' && Boolean(value.trim()) && !value.startsWith('agents.');
-  const projectRoot = registeredWorktrees[0] || root;
-  const defaultWorktreeDirectory = join(dirname(projectRoot), `${basename(projectRoot)}-worktrees`);
-  const worktreeDirectory = hasWorktreeDirectory ? config.worktrees.directory : isExistingWorktree ? defaultWorktreeDirectory : await ask('워크트리 생성 위치 (절대 경로)', defaultWorktreeDirectory);
-  if (!isAbsolute(worktreeDirectory) || worktreeDirectory.includes('\0')) throw new Error('워크트리 생성 위치는 절대 경로여야 합니다.');
   const validEffort = (value) => ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(value);
   const currentProvider = runtimeProviderId || currentProviderOf(config);
   // Only providers this installation carries can be chosen (install --provider codex|claude-code|all).
@@ -521,7 +510,7 @@ async function main() {
   for (const project of projects) console.log(`  ${project.id}: ${project.root} — ${project.services.map((service) => `${service.name} ${service.metrics_url} → scrape ${service.scrape_url}`).join(', ')}`);
   // The summary needs every answer, so while any question is pending the confirmation is asked in the same batch and
   // covers the answers given in it; it is asked again whenever a later round brings new or changed answers.
-  const summary = { worktrees: { directory: worktreeDirectory }, agents: { provider, ...selection }, context_budget: contextBudget, tracker, create_repository: createRepository, observability: { enabled: useVictoriaLogs, logPort, retentionDays, metricsPort, metricsRetention, otelPort, projects } };
+  const summary = { agents: { provider, ...selection }, context_budget: contextBudget, tracker, create_repository: createRepository, observability: { enabled: useVictoriaLogs, logPort, retentionDays, metricsPort, metricsRetention, otelPort, projects } };
   const approved = await confirm('이 설정으로 계속할까요?', 'n', batch.length ? { provisional: true, note: '이 질문들에 대한 답으로 설정을 적용합니다. 요약은 모든 답을 받은 뒤에만 정해집니다.' } : summary, { dependsOn: [...unanswered], revisit: true });
   requireComplete();
   if (!approved) throw new Error('사용자가 설정 적용을 취소했습니다.');
@@ -534,7 +523,6 @@ async function main() {
   const currentConfig = await readFile(configPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
   const currentBudget = await readFile(budgetPath, 'utf8').catch((error) => error.code === 'ENOENT' ? '' : Promise.reject(error));
   let configText = migrateAgentsText(currentConfig).text;
-  if (!reuse || !hasWorktreeDirectory) configText = setYamlScalar(configText, ['worktrees', 'directory'], worktreeDirectory);
   // Each provider keeps its own section, so choosing another provider later leaves these models in place.
   for (const [key, value] of Object.entries(selection)) if (!reuse || !(key.endsWith('_reasoning_effort') ? validEffort(providerSettings[key]) : hasText(providerSettings[key]))) configText = setYamlScalar(configText, ['agents', provider, key], value);
   if (!reuse || !['local-markdown', 'github'].includes(config.tracker?.mode)) configText = setYamlScalar(configText, ['tracker', 'mode'], mode);

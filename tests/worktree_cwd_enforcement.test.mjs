@@ -55,11 +55,13 @@ test('installed workflow commands require cwd inside the target worktree', async
   await t.test('primary entry shows both worktree candidates without binding either one', async () => {
     for (const provider of ['codex', 'claude-code']) {
       const context = entry(primary, provider);
-      assert.equal(context.decision_hint, 'worktree_required');
+      assert.equal(context.decision_hint, 'worktree_choice_required');
       assert.equal(context.worktree_ref, null);
-      assert.match(context.next, /change directory to its workspace_root/);
+      assert.match(context.next, /continue in an existing linked worktree, or start a new workflow/);
+      assert.match(context.next, /compose from primary_workspace_root/);
       assert.doesNotMatch(context.next, /harness-native-stage\.mjs launch|references\/dispatch\.md/);
       assert.deepEqual(new Set(context.candidates.map((candidate) => candidate.worktree_ref)), new Set([a.worktree_ref, b.worktree_ref]));
+      assert.deepEqual(new Set(context.linked_worktrees.map((candidate) => candidate.workspace_root)), new Set([a.workspace, b.workspace]));
     }
     for (const tree of [a, b]) assert.equal((await json(tree.worktree_ref)).agent_sessions.orchestrator.session_id, sessionId);
   });

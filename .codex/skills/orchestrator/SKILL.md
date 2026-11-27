@@ -14,7 +14,9 @@ main_session: true
 
 Harness 설치·업데이트·진단은 현재 checkout의 [Harness Maintenance](../../../.harness/internal-skills/harness-maintenance/GUIDE.md)를 따르며 workflow를 만들지 않는다. 새 workflow는 진입 명령이 안내한 `setup` 또는 [workflow-compose](../../../.harness/internal-skills/workflow-compose/GUIDE.md)로 시작한다. 제품 경로 검증·독립 E2E·legacy 구현 같은 직접 요청일 때만 `references/capability-routing.md`를 연다.
 
-workflow 명령은 현재 working directory가 소유 worktree일 때만 실행한다. primary checkout에서는 기존 후보의 절대 경로만 안내하고, 여러 후보가 있거나 원래 요청을 확인할 수 없으면 후보 경로를 제시하고 사용할 worktree를 선택하게 한다. 사용자가 그 디렉터리로 이동한 뒤 orchestrator를 다시 호출하도록 한다. 새 worktree를 만들었으면 결과를 검증한 뒤 경로를 안내하고 멈춘다. 현재 linked worktree에 새 workflow를 연결한 경우에는 같은 위치에서 계속한다.
+primary checkout에서 등록된 linked worktree가 있으면 먼저 기존 worktree에서 계속할지 새 workflow를 시작할지 묻는다. 기존을 선택하면 `linked_worktrees`의 절대 경로·branch·요청·상태를 보여 주고, 고른 경로로 이동해 orchestrator를 다시 호출하도록 안내한 뒤 멈춘다. 새 workflow를 선택하면 `primary_workspace_root`에서 compose를 실행한다. 문구 일치를 요구하지 말고 답의 뜻으로 선택을 판단한다.
+
+이미 linked worktree 안에서 현재 workflow를 계속하라는 요청은 그 위치에서 이어간다. 새롭거나 별개의 workflow를 요청하면 `primary_workspace_root`를 사용해 primary checkout에서 새 worktree를 만든다. 새 workflow를 현재 linked worktree에 임의로 붙이지 않는다. 새 worktree를 만들었으면 결과를 검증한 뒤 절대 경로를 안내하고 멈춘다.
 
 ## 실행과 확인
 

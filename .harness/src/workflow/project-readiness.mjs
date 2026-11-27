@@ -22,7 +22,6 @@ export async function inspectSetupConfiguration({ workspace_root: root, provider
     if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('Invalid configuration');
   }
   catch (error) { if (error.code && error.code !== 'ENOENT') throw error; config = {}; violations.push('Missing or invalid .harness/harness.yaml'); }
-  if (config.worktrees?.directory !== undefined && (typeof config.worktrees.directory !== 'string' || !isAbsolute(config.worktrees.directory) || config.worktrees.directory.includes('\0'))) violations.push('Invalid worktrees.directory');
   if (config.agents?.provider !== undefined && !['codex', 'claude-code'].includes(config.agents.provider)) violations.push('Invalid agents.provider');
   const provider = requestedProvider || activeAgentProvider(config), agents = providerAgents(config, provider);
   for (const flat of legacyAgentKeys(config)) violations.push(`agents.${flat} must move under agents.${provider} (run harness-codex update)`);

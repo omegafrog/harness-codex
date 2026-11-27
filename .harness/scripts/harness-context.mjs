@@ -51,10 +51,10 @@ try {
     observed.input_worktree_ref = target?.record_path || null;
     observed.input_routing = target ? 'local' : 'unbound';
     if (target && ctx.is_linked_worktree && sessionId) await startup.bindOrchestratorSession({ root: ctx.root, provider, sessionId });
-    if (observed.decision_hint === 'compose_candidate') {
+    if (['compose_candidate', 'worktree_choice_required'].includes(observed.decision_hint)) {
       const { inspectSetupConfiguration } = await import(new URL('../../.harness/src/workflow/project-readiness.mjs', import.meta.url));
       observed.setup_configuration = await inspectSetupConfiguration({ workspace_root: ctx.root, provider });
-      if (observed.setup_configuration.status === 'setup_required') observed.decision_hint = 'setup_candidate';
+      if (observed.setup_configuration.status === 'setup_required' && observed.decision_hint === 'compose_candidate') observed.decision_hint = 'setup_candidate';
     }
     const progress = await startup.refreshWorkflowProgress(observed, 'entry');
     const candidates = provider === 'claude-code' ? ['.claude/skills/orchestrator/SKILL.md', '.codex/skills/orchestrator/SKILL.md'] : ['.codex/skills/orchestrator/SKILL.md'];
@@ -62,10 +62,11 @@ try {
     const composer = join(ctx.root, '.harness/internal-skills/workflow-compose/GUIDE.md');
     routing = {
       provider, session_id: sessionId, session_verified: Boolean(sessionId),
-      workspace_root: ctx.root, worktree_ref: ctx.worktree_ref, decision_hint: observed.decision_hint,
+      workspace_root: ctx.root, primary_workspace_root: observed.primary_workspace_root, worktree_ref: ctx.worktree_ref, decision_hint: observed.decision_hint,
       current_stage: progress?.current_stage || null, workflow_status: progress?.status || null,
       next: startup.startupProcedure({ observed, progress, orchestrator, composer, provider }),
-      ...(observed.decision_hint === 'worktree_required' ? { candidates: observed.worktree_candidates, omitted_candidates: observed.omitted_worktree_candidate_count || undefined } : {}),
+      ...(observed.linked_worktrees?.length ? { linked_worktrees: observed.linked_worktrees } : {}),
+      ...(observed.worktree_candidates?.length ? { candidates: observed.worktree_candidates, omitted_candidates: observed.omitted_worktree_candidate_count || undefined } : {}),
       ...(observed.issues?.length ? { issues: observed.issues } : {}),
       ...(observed.setup_configuration?.violations?.length ? { setup_violations: observed.setup_configuration.violations } : {}),
     };

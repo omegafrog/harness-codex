@@ -161,6 +161,20 @@ export async function inspectStartupState({ workspaceRoot, sessionId = null, pro
       worktreeCandidates.push({ workspace_root: record.workspace_root, worktree_ref: record.record_path, request: null, status: 'active', current_stage: null });
     }
   }
+  const primaryWorkspaceRoot = registered[0]?.workspace || root;
+  const linkedWorktrees = registered.filter((entry) => entry.workspace !== primaryWorkspaceRoot).map((entry) => {
+    const record = records.find((item) => item.workspace_root === entry.workspace);
+    const candidate = worktreeCandidates.find((item) => item.workspace_root === entry.workspace);
+    return {
+      workspace_root: entry.workspace,
+      branch: entry.branch,
+      current: entry.workspace === root,
+      status: record?.status || 'unmanaged',
+      ...(candidate?.request ? { request: candidate.request } : {}),
+      ...(candidate?.status ? { workflow_status: candidate.status } : {}),
+      ...(candidate?.current_stage ? { current_stage: candidate.current_stage } : {}),
+    };
+  });
   const localStates = states.filter((state) => state.session_directory === currentSession);
   const relevantActive = localStates.filter((state) => ACTIVE.has(state.recorded_status || state.status));
   const selectedStates = localStates;
@@ -169,20 +183,18 @@ export async function inspectStartupState({ workspaceRoot, sessionId = null, pro
   let hint = 'compose_candidate', reason = 'No active workflow in the current repository';
   if (!current || relevantIssues.length || currentRecord?.status === 'recovery_required' || (relevantActive.length === 1 && associatedRecord && associatedRecord.status !== 'verified_active')) {
     hint = 'inspect_required'; reason = 'Workflow state, records or Git registration require inspection';
-  } else if (registered[0]?.workspace === root && records.some((record) => !record.current && record.status === 'verified_active')) {
-    hint = 'worktree_required'; reason = 'A linked worktree is active; change directory to that worktree before invoking the orchestrator';
+  } else if (registered[0]?.workspace === root && linkedWorktrees.length) {
+    hint = 'worktree_choice_required'; reason = 'Choose an existing linked worktree to continue or start a new workflow from the primary checkout';
   } else if (relevantActive.length) {
     hint = 'resume_candidate'; reason = 'The current worktree has a persisted active workflow';
-  } else if (registered[0]?.workspace === root && activeStates.length) {
-    hint = 'worktree_required'; reason = 'An active workflow exists in a linked worktree; change directory to that worktree before invoking the orchestrator';
   } else if (currentRecord?.status === 'verified_active' || currentOrphan) {
     hint = 'inspect_required'; reason = 'Existing or unowned worktree/workflow must be associated before composition';
   } else if (states.length === 1) reason = `Matching ${provider} session workflow is terminal`;
   return {
-    schema_version: 1, provider, session_id: sessionId || null, ...(provider === 'codex' ? { codex_session_id: sessionId || null } : {}), workspace_root: root,
+    schema_version: 1, provider, session_id: sessionId || null, ...(provider === 'codex' ? { codex_session_id: sessionId || null } : {}), workspace_root: root, primary_workspace_root: primaryWorkspaceRoot,
     git: { common_dir: common, current_registered: Boolean(current), is_primary: registered[0]?.workspace === root, branch: current?.branch || null, registered_worktree_count: registered.length },
     matching_workflows: selectedStates.slice(0, 8), matching_workflow_count: selectedStates.length, omitted_workflow_count: Math.max(0, selectedStates.length - 8), current_workspace_has_other_session_state: currentForeign, worktree_record_count: records.length, worktrees: [...records].sort((a, b) => Number(b.current) - Number(a.current)).slice(0, 8), omitted_worktree_count: Math.max(0, records.length - 8),
-    session_worktrees: currentRecord?.status === 'verified_active' ? [currentRecord] : [],
+    session_worktrees: currentRecord?.status === 'verified_active' ? [currentRecord] : [], linked_worktrees: linkedWorktrees,
     worktree_candidates: worktreeCandidates.slice(0, 8), omitted_worktree_candidate_count: Math.max(0, worktreeCandidates.length - 8),
     issues: issues.slice(0, 8), omitted_issue_count: Math.max(0, issues.length - 8), decision_hint: hint, reason,
   };
@@ -202,10 +214,12 @@ export function startupProcedure({ observed, progress, orchestrator, composer, p
       return 'Follow the setup procedure for the current checkout.';
     case 'worktree_required':
       return 'For continuation, identify the matching candidate and ask the user to change directory to its workspace_root before invoking the orchestrator. Never select by newest record. A distinct new workflow follows the composition route in the orchestrator skill.';
+    case 'worktree_choice_required':
+      return `At the primary checkout, show the user two choices: continue in an existing linked worktree, or start a new workflow. List every linked_worktree by absolute workspace_root and branch; include its request/status when available. Never select by newest record. If the user chooses an existing workspace, ask which listed one when needed, then tell them to change directory to that exact path and invoke the orchestrator again. Do not run workflow commands in the primary checkout for that choice. If the user chooses a new workflow, compose from primary_workspace_root${observed.setup_configuration?.status === 'setup_required' ? ' after running setup in the primary checkout because its workflow configuration is incomplete' : ''}. Interpret natural-language answers by meaning; require no exact option wording.`;
     case 'inspect_required':
       return 'Report the observed record mismatch or follow its recovery procedure.';
     case 'compose_candidate':
-      return `For a new workflow, read ${composer} and compose with a fresh execution ID. Pass the current provider and session ID. Verify the invocation result and binding. From the primary checkout, verify against the pre-creation Git list and stop after giving the new absolute workspace path. In an existing linked worktree, verify that the returned workspace is current and continue there.`;
+      return `For a new workflow, read ${composer} and compose with a fresh execution ID. Pass the current provider and session ID. If workspace_root is primary, compose from it. If invoked inside a linked worktree for a distinct new workflow, compose with --root primary_workspace_root so a new worktree is created from the main checkout. Verify the invocation result and binding. From the primary checkout, verify against the pre-creation Git list and stop after giving the new absolute workspace path.`;
     case 'resume_candidate': {
       const dispatch = join(dirname(orchestrator), 'references/dispatch.md');
       const firstStage = observed.input_routing === 'local' && progress && progress.worktree_ref === observed.input_worktree_ref

@@ -7,7 +7,6 @@ import { createHash, randomUUID } from 'node:crypto';
 import { lstat, mkdir, readFile, realpath, rename, open, unlink, chmod } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, basename } from 'node:path';
 import { parseWorkflowBinding } from './providers/index.mjs';
-import { parseYaml } from '../eval/yaml.mjs';
 
 const exec = promisify(execFile);
 const git = async (root, args) => (await exec('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })).stdout.trim();
@@ -269,10 +268,8 @@ export async function createWorkflowWorktree({ workspace_root, return_root = nul
   const [sourceStore, returnStore] = await Promise.all([storage(sourceWorkspace), storage(returnRoot)]);
   if (sourceStore.common !== returnStore.common) throw new Error('Source and return roots must share a Git common directory');
   const worktreeId = randomUUID();
-  const configText = await readFile(join(returnRoot, '.harness/harness.yaml'), 'utf8').catch((error) => { if (error.code === 'ENOENT') return ''; throw error; });
-  const configured = parseYaml(configText).worktrees?.directory;
-  if (configured !== undefined && (typeof configured !== 'string' || !isAbsolute(configured) || configured.includes('\0'))) throw new Error('worktrees.directory must be an absolute directory path');
-  const worktreesDirectory = configured || join(dirname(returnRoot), `${basename(returnRoot)}-worktrees`);
+  const projectRoot = await primaryRoot(returnRoot) || returnRoot;
+  const worktreesDirectory = join(dirname(projectRoot), `${basename(projectRoot)}-worktrees`);
   const sessionBranch = branch || `harness/worktree/${worktreeId}`;
   await git(workspace_root, ['check-ref-format', '--branch', sessionBranch]);
   if (!branch && await git(workspace_root, ['status', '--porcelain', '--untracked-files=all'])) throw new Error('Source workspace must be clean before creating a session branch');

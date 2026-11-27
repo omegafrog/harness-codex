@@ -58,7 +58,8 @@ test('installed setup reuses current configuration and ignores old answer hashes
     await writeFile(join(root, '.harness/harness.yaml'), config);
     await writeFile(answers, JSON.stringify({ answers: { [first.pending.id]: 'reuse' } }));
     const migrateWorktrees = run('--answers', answers);
-    assert.equal(migrateWorktrees.pending.id, '워크트리 생성 위치 (절대 경로)#1');
+    assert.equal(migrateWorktrees.status, 'configured');
+    assert.doesNotMatch(JSON.stringify(migrateWorktrees.questions || []), /워크트리|worktree/);
     assert.equal(await readFile(join(root, '.harness/harness.yaml'), 'utf8'), config);
     await (await import('node:fs/promises')).mkdir(join(root, '.harness'), { recursive: true });
     await writeFile(join(root, '.harness/harness.yaml'), configured);
@@ -90,9 +91,8 @@ test('installed setup reuses current configuration and ignores old answer hashes
     await writeFile(answers, JSON.stringify({ answers: { [first.pending.id]: 'reconfigure' } }));
     let batch = runWithModels();
     let setupAnswers = { [first.pending.id]: 'reconfigure' };
-    const selectedWorktrees = join(root, '..', 'chosen worktrees');
     for (let round = 0; round < 6 && !batch.questions.some(({ prompt }) => prompt.startsWith('복잡한 설계·최종 검토 모델 모델 선택')); round += 1) {
-      setupAnswers = { ...setupAnswers, ...answerBatch(batch.questions, { ...BATCH_CHOICES, '워크트리 생성 위치': selectedWorktrees, '실행 provider 선택': 'codex' }) };
+      setupAnswers = { ...setupAnswers, ...answerBatch(batch.questions, { '실행 provider 선택': 'codex' }) };
       await writeFile(answers, JSON.stringify({ answers: setupAnswers }));
       batch = runWithModels();
     }
@@ -230,18 +230,17 @@ test('answering conditional setup batches applies defaults and keeps Harness fil
   const { root, run, git } = await freshProject();
   try {
     let first = await run({});
-    const selected = join(root, '..', 'custom worktree location');
     let answers = {};
     let answered;
     for (let round = 0; round < 6; round += 1) {
-      answers = { ...answers, ...answerBatch(first.questions, { ...BATCH_CHOICES, '워크트리 생성 위치': selected }) };
+      answers = { ...answers, ...answerBatch(first.questions, BATCH_CHOICES) };
       answered = await run(answers);
       if (answered.status === 'configured') break;
       first = answered;
     }
     assert.equal(answered.status, 'configured');
     const config = await readFile(join(root, '.harness/harness.yaml'), 'utf8');
-    assert.ok(config.includes(`directory: ${JSON.stringify(selected)}`));
+    assert.doesNotMatch(config, /worktrees:/);
     assert.doesNotMatch(config, /provider: "codex"/);
     assert.match(config, /high_performance_model: "example-a"/);
     assert.match(config, /high_performance_reasoning_effort: "xhigh"/);
@@ -259,19 +258,17 @@ test('answering conditional setup batches applies defaults and keeps Harness fil
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('setup in an existing linked worktree shows Codex/worktree context and keeps that worktree', async () => {
-  const { root, primary, cleanupRoot, run, git } = await freshProject({ linked: true });
+test('setup ignores linked worktree placement and keeps the current workspace', async () => {
+  const { root, cleanupRoot, run, git } = await freshProject({ linked: true });
   try {
     const before = git('worktree', 'list', '--porcelain');
     let batch = await run({});
     assert.ok(batch.questions.length > 0);
     assert.ok(batch.questions.every(({ context }) => context.includes('현재 실행 환경: Codex CLI')));
-    assert.ok(batch.questions.every(({ context }) => context.includes('이미 생성된 linked worktree (feature/setup)')));
-    assert.ok(batch.questions.every(({ context }) => context.includes('현재 worktree를 유지합니다')));
-    assert.doesNotMatch(JSON.stringify(batch.questions), /워크트리 생성 위치|향후 workflow worktree 생성 상위 경로/);
+    assert.doesNotMatch(JSON.stringify(batch.questions), /워크트리|worktree/);
     let answers = {};
     for (let round = 0; round < 6; round += 1) {
-      assert.doesNotMatch(JSON.stringify(batch.questions), /워크트리 생성 위치|향후 workflow worktree 생성 상위 경로/);
+      assert.doesNotMatch(JSON.stringify(batch.questions), /워크트리|worktree/);
       answers = { ...answers, ...answerBatch(batch.questions, BATCH_CHOICES) };
       batch = await run(answers);
       if (batch.status === 'configured') break;
@@ -279,15 +276,15 @@ test('setup in an existing linked worktree shows Codex/worktree context and keep
     assert.equal(batch.status, 'configured');
     assert.equal(git('worktree', 'list', '--porcelain'), before);
     const config = await readFile(join(root, '.harness/harness.yaml'), 'utf8');
-    assert.ok(config.includes(`directory: ${JSON.stringify(join(primary, '..', 'project-worktrees'))}`));
+    assert.doesNotMatch(config, /worktrees:/);
   } finally { await rm(cleanupRoot, { recursive: true, force: true }); }
 });
 
-test('setup rejects a relative worktree location', async () => {
+test('setup does not ask for a worktree location', async () => {
   const { root, run } = await freshProject();
   try {
     const first = await run({});
-    await assert.rejects(run(answerBatch(first.questions, { ...BATCH_CHOICES, '워크트리 생성 위치': 'relative/path' })), /절대 경로/);
+    assert.doesNotMatch(JSON.stringify(first.questions), /워크트리|worktree/);
     assert.equal(await exists(join(root, '.harness/harness.yaml')), false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

@@ -1,7 +1,7 @@
 interface:
   display_name: "Workflow 오케스트레이터"
   short_description: "모델을 지정한 subagent로 skill을 실행하고 결과 파일과 상태 코드로 workflow를 조율합니다."
-  default_prompt: "Run the orchestrator only from the target workflow worktree. From the primary checkout, create and verify a new worktree, return its absolute path, and stop; the user will change directory there and call the orchestrator again. Never route an answer or stage to another worktree from the primary checkout."
+  default_prompt: "At the primary checkout, inspect harness-context.mjs --entry. If linked_worktrees are listed, ask whether to continue in one or start a new workflow. Show each absolute path, branch and available request/status. For an existing choice, tell the user to change directory to that exact workspace and call the orchestrator again; do not dispatch there from primary. For a new choice, compose from primary_workspace_root, verify the new worktree, return its absolute path and stop. Interpret answers by meaning, not exact wording. Inside a selected worktree, continue its workflow; when the user asks for a distinct new workflow, compose from primary_workspace_root. Never route stages or answers to another worktree from primary."
 
 policy:
   allow_implicit_invocation: false

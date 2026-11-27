@@ -1,6 +1,6 @@
 # 설정 선택
 
-워크트리 생성 위치는 절대 경로로 받는다. 기본값은 프로젝트 옆 `<프로젝트명>-worktrees`이며 선택한 상위 디렉터리 아래에 각 worktree를 만든다. 기존 설정 재사용 시 위치가 없으면 이 항목을 묻고, 위치를 바꾸려면 새로 설정을 선택한다. 기존 worktree는 이동하지 않는다.
+setup은 worktree 위치를 묻거나 설정하지 않는다. 사용자가 workflow를 시작하면 orchestrator가 primary checkout을 찾아 그 옆 `<프로젝트명>-worktrees`에 새 workspace를 만든다. setup은 현재 checkout을 유지한다.
 
 1. 같은 cwd에서 `node .harness/scripts/harness-setup.mjs --root <absolute-project-root> --start`를 실행하고 프로세스 종료를 기다린다. CLI가 새 setup 세션을 만들고 반환한 `answers_path`에 답변을 저장한다. 이전 실행의 파일이나 공유 경로 포인터를 만들거나 사용하지 않는다.
 2. 같은 setup의 질문을 이어갈 때는 반환된 `answers_path`로 `node .harness/scripts/harness-setup.mjs --root <absolute-project-root> --answers <answers_path>`를 실행한다. 기존 설정이 있으면 CLI가 현재 설정을 재사용할지 새로 설정할지 먼저 묻는다. 재사용을 선택하면 유효한 값은 유지하고 누락·오류 항목만 확인한다. `status: configured`만 적용 완료다.
