@@ -27,7 +27,7 @@ async function sampleSession(session, directory, ids = ['calm', 'bold']) {
 const option = (directory, id, previews = ['desktop', 'mobile']) => ({ id, label: id, consequence: `${id} 스타일`, evidence: [], previews: previews.map((viewport) => ({ path: `${directory}/${id}/${viewport}.png`, viewport, caption: `${id} ${viewport}` })) });
 const visualQuestion = (directory, options, title = `어떤 시각 스타일로 진행할까요? 비교 페이지: .io/${directory}/index.html`) => withDecisionContext({ title, decision_kind: 'visual_direction', options, recommended_option_id: options[0].id, rationale: '핵심 화면의 밀도에 맞는다' });
 
-test('a visual direction question needs real desktop and mobile images inside the session and a comparison page', async (t) => {
+test('a visual direction question needs a real desktop image inside the session and a comparison page', async (t) => {
   const session = await mkdtemp(join(tmpdir(), 'style-previews-'));
   t.after(() => rm(session, { recursive: true, force: true }));
   const directory = 'runtime/executions/brief/style-options';
@@ -41,7 +41,8 @@ test('a visual direction question needs real desktop and mobile images inside th
   const reject = (question, pattern) => assert.rejects(assertQuestionPreviews({ session, question }), pattern);
   await reject(visualQuestion(directory, [option(directory, 'calm'), { ...option(directory, 'bold'), previews: [] }]), /option bold needs preview screenshots/);
   await reject(visualQuestion(directory, [option(directory, 'calm'), (({ previews, ...rest }) => rest)(option(directory, 'bold'))]), /option bold needs preview screenshots/);
-  await reject(visualQuestion(directory, [option(directory, 'calm'), option(directory, 'bold', ['desktop'])]), /needs a mobile preview/);
+  await assertQuestionPreviews({ session, question: visualQuestion(directory, [option(directory, 'calm', ['desktop']), option(directory, 'bold', ['desktop'])]) });
+  await reject(visualQuestion(directory, [option(directory, 'calm'), option(directory, 'bold', ['mobile'])]), /needs a desktop preview/);
   await reject(visualQuestion(directory, [option(directory, 'calm'), option(directory, 'gone')]), /does not exist/);
   const escape = { ...option(directory, 'bold'), previews: [{ path: '../outside.png', viewport: 'desktop', caption: 'x' }, { path: join(tmpdir(), 'outside.png'), viewport: 'mobile', caption: 'x' }] };
   await reject(visualQuestion(directory, [option(directory, 'calm'), escape]), /outside the session/);
@@ -105,10 +106,15 @@ test('the capture script renders every option at desktop and mobile size and wri
   assert.equal(output.status, 0, output.stderr);
   const captured = JSON.parse(output.stdout);
   assert.equal(captured.comparison_page.path, `${relativeDirectory}/index.html`);
+  assert.deepEqual(captured.options.map((item) => item.previews.map(({ viewport }) => viewport)), [['desktop'], ['desktop']]);
+  await writeFile(join(directory, 'options.json'), JSON.stringify({ screen: '게시글 작성', options, viewports: ['desktop', 'mobile'] }));
+  const mobileOutput = spawnSync(process.execPath, [join(sourceRoot, SCRIPT), '--root', root, '--execution-id', 'brief'], { cwd: root, encoding: 'utf8', timeout: 120000 });
+  assert.equal(mobileOutput.status, 0, mobileOutput.stderr);
+  const mobileCaptured = JSON.parse(mobileOutput.stdout);
   const page = await readFile(captured.comparison_page.absolute_path, 'utf8');
   for (const { id } of options) for (const viewport of ['desktop', 'mobile']) assert.match(page, new RegExp(`src="${id}/${viewport}\\.png"`));
-  assert.deepEqual(captured.options.map((item) => item.previews.map(({ viewport }) => viewport)), [['desktop', 'mobile'], ['desktop', 'mobile']]);
-  const mobile = await readFile(join(root, '.io', captured.options[0].previews[1].path));
+  assert.deepEqual(mobileCaptured.options.map((item) => item.previews.map(({ viewport }) => viewport)), [['desktop', 'mobile'], ['desktop', 'mobile']]);
+  const mobile = await readFile(join(root, '.io', mobileCaptured.options[0].previews[1].path));
   assert.equal(mobile.readUInt32BE(16), 390, 'the mobile sample is laid out at device width');
   const question = { title: `어떤 시각 스타일로 진행할까요? 비교 페이지: ${captured.comparison_page.absolute_path}`, decision_kind: 'visual_direction', recommended_option_id: 'calm', rationale: 'r', options: captured.options.map(({ id, label, previews }) => ({ id, label, consequence: label, evidence: [], previews })) };
   await assertQuestionPreviews({ session: join(root, '.io'), question });
@@ -130,6 +136,8 @@ test('the installed frontend-design-brief stage returns the style question only 
   const state = JSON.parse(await readFile(statePath, 'utf8'));
   const { TACTICAL_DESIGN_STAGES } = await import('../.harness/src/workflow/worktree-stages.mjs');
   for (const stage of TACTICAL_DESIGN_STAGES) state.stages[stage] = { status: 'completed', code: 'OK', result_ref: `runtime/executions/${stage}/result.json` };
+  Object.assign(state.stages['context-boundary'], { execution_id: 'boundary-approved', finished_at: '2026-01-01T00:00:00.000Z' });
+  state.stages['tactical-technology'] = { status: 'failed', execution_id: 'previous-attempt', design_approval: { stage_id: 'context-boundary', execution_id: 'boundary-approved' } };
   state.current_stage = 'workflow-compose';
   await writeFile(statePath, JSON.stringify(state));
   await flow.runStage('tactical-technology', { files: { [`docs/implementation/${flow.planSetId}/technology.md`]: 'Node\n' } });

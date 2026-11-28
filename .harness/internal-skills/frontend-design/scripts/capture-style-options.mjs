@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Renders each visual style candidate's static mock in Chromium (Playwright), captures desktop and mobile screenshots into
+// Renders each visual style candidate's static mock in Chromium (Playwright), captures desktop and requested mobile screenshots into
 // the execution's session output and writes one comparison page. Prints the `previews` and comparison path for the
 // frontend-design-brief visual_direction question.
 //
@@ -52,6 +52,7 @@ export async function readStyleOptions(root, executionId) {
   await regularFile(manifestPath, 'Style option manifest');
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   if (!manifest || typeof manifest.screen !== 'string' || !manifest.screen.trim() || !Array.isArray(manifest.options) || manifest.options.length < 2) throw new Error('options.json needs a screen and at least two options');
+  if (manifest.viewports !== undefined && (!Array.isArray(manifest.viewports) || !manifest.viewports.includes('desktop') || manifest.viewports.some((name) => !Object.hasOwn(VIEWPORTS, name)) || new Set(manifest.viewports).size !== manifest.viewports.length)) throw new Error('viewports must contain desktop and may contain mobile');
   const ids = new Set();
   for (const option of manifest.options) {
     if (!OPTION_ID.test(option?.id || '') || ids.has(option.id) || typeof option.label !== 'string' || !option.label.trim() || typeof option.summary !== 'string') throw new Error(`Invalid or duplicate style option: ${JSON.stringify(option?.id)}`);
@@ -138,7 +139,8 @@ export async function captureStyleOptions({ root, executionId, browserPath = nul
     for (const option of manifest.options) {
       previews[option.id] = [];
       const mock = pathToFileURL(sessionOutputPath(root, `${directory}/${option.id}/mock.html`)).href;
-      for (const [viewport, settings] of Object.entries(VIEWPORTS)) {
+      for (const viewport of manifest.viewports || ['desktop']) {
+        const settings = VIEWPORTS[viewport];
         const context = await browser.newContext({ ...settings, deviceScaleFactor: 1, reducedMotion: 'reduce' });
         try {
           const page = await context.newPage();

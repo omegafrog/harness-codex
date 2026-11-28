@@ -15,6 +15,8 @@ model_tier: low_performance
 
 이 stage는 화면·흐름을 추가하지 않는다. 화면과 흐름은 `requirements.md`의 BIZ/INV/EX/AC와 `tactical-design.md`의 Application Service 메서드(`AS-xx`)에 추적되어야 하며, 추적되지 않는 화면(요구에 없는 로그아웃·설정·관리 화면 등)은 handoff하지 않는다. "이 화면을 범위에 포함할까요?" 같은 범위 질문도 하지 않는다. `ui-handoff.md`나 결과에 화면 표를 적는다면 `화면`·`근거` 열을 두고 행마다 `AS-xx`나 요구 ID를 적는다. 요구를 덮을 use case가 없으면 `application-service`를 owner로 `blocked/DEPENDENCY_INCOMPLETE`를 반환한다.
 
+사용자가 기기 범위를 지정하지 않았다면 데스크톱 웹을 대상으로 한다. 모바일·태블릿은 명시된 요구가 있을 때만 포함한다. 기존 제품의 스타일 목록을 사용자에게 보여 주고 선택받아 같은 영역의 디자인에 재사용하도록 handoff한다.
+
 ## 독립 workflow handoff
 
 사용자 요청에 UI가 포함되면 새 page/view/app shell 또는 큰 UX 재설계는 `.harness/workflows/frontend-design.yaml`의 독립 workflow가 소유한다. design 단계는 ticket 분할 전에, implementation과 visual review는 ticket 발행 뒤에 수행한다. 신규 화면·흐름의 방향이 요청이나 승인된 계획에 구체적으로 정해져 있으면 그 결정을 재사용한다. 미정이면 먼저 사용자와 기존 요구사항이 다루는 핵심 화면과 흐름을 합의한다. 제품이 웹 앱이라는 사실만으로 화면·흐름이 합의됐다고 판단하지 않는다.

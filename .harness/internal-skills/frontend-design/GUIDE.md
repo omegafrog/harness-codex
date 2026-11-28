@@ -48,7 +48,7 @@ model_tier: high_performance
 
 ## Phase 1 — Current UI inventory
 
-디자인 결정을 내리기 전에 현재 frontend를 조사한다.
+디자인 결정을 내리기 전에 현재 frontend를 조사한다. 기기 범위를 명시하지 않았다면 데스크톱 웹 화면을 기본으로 한다. 모바일·태블릿과 네이티브 앱은 요청 또는 확정 요구사항에 있을 때만 포함한다.
 
 - framework와 styling approach
 - token/theme source
@@ -86,13 +86,13 @@ model_tier: high_performance
 
 ## Phase 2.5 — 시각 스타일 선택 질문
 
-사용자가 제공한 Figma frame·screenshot·`docs/design/DESIGN.md` 또는 이전 답변이 시각 방향을 이미 정했으면 이 단계를 건너뛰고 그 근거를 brief의 Visual character에 적는다. 그 밖에는 brief를 쓰기 전에 사용자에게 스타일을 고르게 한다. 모든 선택지에는 실제 렌더링한 이미지 시안이 있어야 한다.
+이번 요청에서 특정 스타일을 이미 지정했으면 그 결정을 사용한다. 그렇지 않으면 `docs/design/DESIGN.md`, 기존 UI, 토큰과 공유 컴포넌트에서 제품에 실제로 존재하는 시각 스타일을 조사해 이름, 적용 화면(예: 관리자), 팔레트와 주요 특징을 사용자에게 보여 주고 선택하게 한다. 기존 스타일 선택은 일반 선택 질문으로 하며, 선택한 스타일을 같은 제품 영역의 이후 기능에도 재사용한다. 기능마다 새 스타일을 만들거나 임의로 기존 스타일을 고르지 않는다. 기존 스타일이 없거나 사용자가 새 스타일을 원할 때만 아래 새 스타일 후보 절차를 실행한다.
 
 1. Phase 2 reference에 근거해 서로 뚜렷이 다른 스타일 후보 2~4개를 정한다. 후보마다 id(`^[a-z0-9][a-z0-9-]*$`), 짧은 이름, 대표 reference, 밀도·타이포그래피·surface·강조색의 차이를 정한다.
 2. 이번 기능의 같은 핵심 화면 하나를 후보별 정적 mock으로 만든다. 콘텐츠와 구조는 같게 두고 스타일만 바꾼다. mock은 CSS와 이미지(data URI)를 inline으로 포함하고 외부 네트워크 자원을 쓰지 않으며 `<meta name="viewport" content="width=device-width, initial-scale=1">`를 넣는다. 파일은 product source가 아니라 session에만 쓴다. `harness-session-output.mjs --path`로 `runtime/executions/<execution_id>/style-options/options.json`(`{"screen": "<핵심 화면>", "options": [{"id", "label", "summary"}]}`)과 `runtime/executions/<execution_id>/style-options/<option_id>/mock.html`의 경로를 받는다.
-3. `node .harness/internal-skills/frontend-design/scripts/capture-style-options.mjs --root <workspace_root> --execution-id <execution_id>`로 후보별 desktop(1440×900)·mobile(390×844) screenshot과 후보를 나란히 보여 주는 `style-options/index.html` 비교 페이지를 만든다. 스크립트는 프로젝트 또는 전역 Playwright를 사용하고, Chromium SingletonSocket 경로 제한을 피하도록 Chromium의 임시 디렉터리만 짧은 경로로 옮긴 뒤 삭제한다. 실행 전 `frontend-visual-review` GUIDE의 브라우저 환경 점검이 있으면 같은 방식으로 확인한다. Playwright가 없거나(exit 2) 브라우저를 띄우지 못하면 의존성을 설치하거나 스타일을 혼자 고르지 말고 실패 출력과 함께 `blocked/ENVIRONMENT_UNAVAILABLE`을 반환한다.
+3. `node .harness/internal-skills/frontend-design/scripts/capture-style-options.mjs --root <workspace_root> --execution-id <execution_id>`로 후보별 desktop(1440×900) screenshot(모바일이 범위에 포함된 경우 `options.json`에 `"viewports": ["desktop", "mobile"]`을 추가하여 mobile 390×844도 생성)과 후보를 나란히 보여 주는 `style-options/index.html` 비교 페이지를 만든다. 스크립트는 프로젝트 또는 전역 Playwright를 사용하고, Chromium SingletonSocket 경로 제한을 피하도록 Chromium의 임시 디렉터리만 짧은 경로로 옮긴 뒤 삭제한다. 실행 전 `frontend-visual-review` GUIDE의 브라우저 환경 점검이 있으면 같은 방식으로 확인한다. Playwright가 없거나(exit 2) 브라우저를 띄우지 못하면 의존성을 설치하거나 스타일을 혼자 고르지 말고 실패 출력과 함께 `blocked/ENVIRONMENT_UNAVAILABLE`을 반환한다.
 4. 생성한 이미지를 직접 열어 빈 화면·깨진 글꼴·잘림·가로 overflow가 없는지 확인한다. 문제가 있으면 mock을 고쳐 다시 캡처한다.
-5. `action_required/USER_DECISION_REQUIRED`로 질문 하나를 반환한다. `decision_kind: "visual_direction"`, 선택지마다 스크립트가 출력한 `previews`를 그대로 넣고(desktop·mobile 필수) `evidence: []`, 추천 선택지와 근거를 준다. `context`에는 확정된 화면 요구와 지금 정해야 하는 이유를, 선택지마다 `effect`(화면에서 달라지는 점)와 `example`(같은 화면 상황을 그 스타일로 보여 준 문장; 이미지를 볼 수 없는 질문 UI를 위한 설명)을 적는다([질문 형식](../grilling/GUIDE.md#ask-questions-the-user-can-answer)). `title`에는 한국어 질문 문장과 비교 페이지의 절대 경로, 후보별 이미지 절대 경로를 함께 적는다. 예: `어떤 시각 스타일로 진행할까요? 비교 페이지: <절대 경로>/style-options/index.html — calm: <desktop.png 절대 경로>, <mobile.png 절대 경로> …`. 이 결과에는 brief artifact를 넣지 않는다. 실행기는 preview가 없거나, 파일이 없거나, session 밖이거나, 이미지가 아니거나, `title`이 존재하는 비교 페이지를 가리키지 않는 질문을 거부한다.
+5. `action_required/USER_DECISION_REQUIRED`로 질문 하나를 반환한다. `decision_kind: "visual_direction"`, 선택지마다 스크립트가 출력한 `previews`를 그대로 넣고(desktop 필수, mobile은 요청된 경우 포함) `evidence: []`, 추천 선택지와 근거를 준다. `context`에는 확정된 화면 요구와 지금 정해야 하는 이유를, 선택지마다 `effect`(화면에서 달라지는 점)와 `example`(같은 화면 상황을 그 스타일로 보여 준 문장; 이미지를 볼 수 없는 질문 UI를 위한 설명)을 적는다([질문 형식](../grilling/GUIDE.md#ask-questions-the-user-can-answer)). `title`에는 한국어 질문 문장과 비교 페이지의 절대 경로, 후보별 이미지 절대 경로를 함께 적는다. 예: `어떤 시각 스타일로 진행할까요? 비교 페이지: <절대 경로>/style-options/index.html — calm: <desktop.png 절대 경로> …`. 이 결과에는 brief artifact를 넣지 않는다. 실행기는 preview가 없거나, 파일이 없거나, session 밖이거나, 이미지가 아니거나, `title`이 존재하는 비교 페이지를 가리키지 않는 질문을 거부한다.
 6. 답변 뒤 다시 실행되면 답변의 선택지로 Phase 3을 진행한다. 사용자가 후보 수정이나 설명을 요청하면 후보·mock을 고쳐 다시 캡처하고 같은 형식으로 다시 묻는다.
 
 ## Phase 3 — Frontend design brief
@@ -103,9 +103,9 @@ model_tier: high_performance
 - Screen/flow scope
 - Dominant reference and supporting influences
 - Existing design-system assets to reuse
-- Visual character: 선택한 스타일 option id·이름, 질문 ID와 사용자 답변 원문, 대표 preview 경로(또는 시각 방향을 정한 사용자 자료)
+- Visual character: 선택한 기존 스타일의 이름·적용 영역·근거 위치와 사용자 답변, 또는 새 스타일 option id·이름·질문 ID·답변·preview 경로
 - Information hierarchy
-- Layout model and responsive behavior
+- Layout model과 확정된 기기·viewport 범위
 - Typography roles
 - Surface/border/shadow rules
 - Spacing/density rules

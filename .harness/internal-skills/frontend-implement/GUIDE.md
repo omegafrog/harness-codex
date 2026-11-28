@@ -29,7 +29,7 @@ model_tier: implementation
 4. 디자인 시스템이 있는데 page-local raw color, arbitrary spacing, inline style로 우회하지 않는다.
 5. 새 component는 화면 전용 markup보다 재사용 가치가 있을 때만 shared layer로 올린다.
 6. accessibility primitive가 이미 있으면 dialog/menu/popover/focus management를 직접 재구현하지 않는다.
-7. responsive behavior를 구현한다. desktop-only CSS로 완료 처리하지 않는다.
+7. 확정된 viewport 범위의 layout을 구현한다. 모바일은 사용자 요청 또는 확정 요구사항에 포함된 경우 구현한다.
 8. 적용 가능한 loading, empty, error, disabled, focus-visible, pending, success, retry, validation state와 오류 복구 경로를 구현한다. 비동기 작업은 중복 제출을 막고 결과를 전달한다.
 9. animation은 state transition, spatial continuity, user feedback에 필요한 경우만 사용하고 `prefers-reduced-motion`을 존중한다.
 10. Figwright handoff가 있으면 `.harness/internal-skills/frontend-figma/GUIDE.md`의 Mode B를 먼저 적용해 Figma 구조와 mapping을 grounding한다.
@@ -51,7 +51,7 @@ model_tier: implementation
 4. 가장 큰 structural layout부터 구현한다.
 5. 기존 components와 variants를 연결한다.
 6. interaction과 상태를 구현한다.
-7. responsive layout을 구현한다.
+7. 확정된 viewport 범위의 layout을 구현한다.
 8. typography, spacing, borders, surfaces를 tokens에 맞춰 조정한다.
 9. project에 설정된 lint/typecheck/test를 실행한다.
 10. project에 design-system lint가 설정돼 있으면 실행한다.

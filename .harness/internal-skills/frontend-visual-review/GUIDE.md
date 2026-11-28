@@ -37,7 +37,7 @@ The Harness checks the browser environment when this stage starts, before you ex
 6. target viewport가 지정되어 있지 않으면 최소 다음 범주를 확인한다.
    - desktop: 약 1440px width
    - compact desktop/laptop: 약 1280px width
-   - narrow mobile: 약 390px width
+   - 모바일은 사용자 요청 또는 확정된 요구사항에 포함된 경우에만 확인한다.
 7. Figwright handoff가 있으면 `.harness/internal-skills/frontend-figma/GUIDE.md`의 Mode C를 적용해 authoritative Figma root node의 `get_screenshot` 결과와 같은 state/viewport의 browser screenshot을 비교한다.
 8. 각 핵심 화면과 중요한 interaction state에서 실제 render를 시각적으로 검사한다.
 9. 종료 시 이 run이 시작한 process와 임시 artifact를 정리하고 git status를 확인한다.

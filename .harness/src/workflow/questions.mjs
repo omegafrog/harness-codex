@@ -313,7 +313,7 @@ async function head(path, length) {
 }
 
 // Every preview an option carries is a real image in the session. A visual_direction question offers each style with at
-// least a desktop and a mobile screenshot and names, in its title, the comparison page that shows them side by side.
+// least a desktop screenshot and names, in its title, the comparison page that shows them side by side.
 export async function assertQuestionPreviews({ session, question }) {
   if (!question || !Array.isArray(question.options)) throw new Error('Invalid question');
   const visual = question.decision_kind === 'visual_direction';
@@ -322,7 +322,7 @@ export async function assertQuestionPreviews({ session, question }) {
     if (!Array.isArray(previews)) throw new Error(`Option ${option.id} previews must be an array`);
     if (visual) {
       if (!previews.length) throw new Error(`Visual direction option ${option.id} needs preview screenshots`);
-      for (const viewport of ['desktop', 'mobile']) if (!previews.some((item) => item?.viewport === viewport)) throw new Error(`Visual direction option ${option.id} needs a ${viewport} preview`);
+      if (!previews.some((item) => item?.viewport === 'desktop')) throw new Error(`Visual direction option ${option.id} needs a desktop preview`);
     }
     for (const preview of previews) {
       const what = `Preview of option ${option.id}`;
