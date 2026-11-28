@@ -195,12 +195,4 @@ Domain Service는 `2.2`에서 `Domain Service`로 넘긴 규칙만 맡고 조율
 
 ## 프로젝트 문서 `docs/architecture/domain-model.md`
 
-프로젝트가 소유하는 현재 모델 기준 문서다. 이 plan set의 승인 target을 반영하되 영향받는 모델 행만 갱신하고 다른 행은 그대로 둔다. Git에 노출되는 프로젝트 문서이며 Harness 설치 산출물이 아니다.
-
-| Context / 모델 ID | 상태 | Root / 소유 코드 | 규칙 ID → enforcement | 데이터 / transaction | 공개 계약 / 통신 | deployment / extraction trigger | 근거 |
-|---|---|---|---|---|---|---|---|
-
-- 한 행은 Entity 하나(Aggregate Root이거나 구성원) 또는 외부 시스템 하나다. Value Object는 그것을 쓰는 Entity 행의 `Root / 소유 코드` 칸에 `VO: 이름`으로 적는다. 쓰는 Entity가 없는 Value Object(Aggregate가 없는 BC)는 자기 행을 가지며 `Root / 소유 코드`에 `VO`를 적는다. `Context / 모델 ID`는 `<BC> / <모델>` 형식이다.
-- `상태`는 `implemented`와 `accepted-target`을 구분한다. 확인한 코드가 있는 행만 `implemented`이며 설계 승인만으로 `implemented`로 쓰지 않는다. 구현 완료는 이 stage들이 아니라 구현 뒤 `sync-contracts`가 반영한다.
-- 열은 stage가 나눠 채운다. `domain-model`은 `상태`, `Root / 소유 코드`(기존 `file:line`이나 `미정`)와 `근거`를, `aggregate-design`은 `Root / 소유 코드`와 `규칙 ID → enforcement`, `데이터 / transaction`의 Aggregate 경계를, `domain-service`는 Domain Service가 맡은 `규칙 ID → enforcement`를, `application-service`는 `데이터 / transaction`의 transaction·Repository를, `integration-design`은 `공개 계약 / 통신`을 채운다. `deployment / extraction trigger`는 이 stage들이 정하지 않으며 기존 값을 그대로 둔다.
-- `근거`에는 `docs/specs/<plan-set-id>/tactical-design.md`의 해당 절을 연결한다. 모델 문서에 표가 없으면 이 표를 새 절로 더하고 기존 본문은 지우지 않는다. 같은 행을 다른 plan set이 고치고 있으면 상대의 변경을 덮어쓰지 않는다.
+프로젝트가 소유하는 도메인 모델 설명 문서다. [공통 프로젝트 문서 규칙](deepening.md#프로젝트-문서)에 따라 영향받는 모델의 의미와 구조를 간결하게 갱신하고 나머지 프로젝트 본문을 보존한다. 기존 번호형 전술 설계도 같은 규칙을 사용한다. 같은 모델을 다른 plan set이 고치고 있으면 상대의 변경을 덮어쓰지 않는다.

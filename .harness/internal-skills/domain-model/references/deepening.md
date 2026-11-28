@@ -19,7 +19,8 @@
 ## 프로젝트 문서
 
 - 용어는 `CONTEXT.md`와 요구사항 용어 표에서 찾는다. 새 개념에는 [용어 생애주기](../../domain-modeling/references/language-lifecycle.md)를 적용한다.
-- `docs/architecture/domain-model.md`에 영향받는 모델 행만 반영하고 기존 프로젝트 본문을 보존한다. 코드에서 확인한 내용은 경로·행·commit과 함께 `implemented`, 나머지 설계는 `accepted-target`으로 표기한다. 모델·Root·강제 위치·통신 등은 해당 BC 설계 행의 링크로 연결한다.
+- `docs/architecture/domain-model.md`는 프로젝트에 어떤 도메인 모델이 있고 어떤 의미와 구조를 갖는지 설명한다. 영향받는 모델에 이름과 의미, 소속 Context, Entity·Value Object·Aggregate와 Root 여부, 식별자·생명주기, 주요 상태·행위, 중요한 모델 관계와 핵심 불변식을 필요한 만큼 간결하게 기록한다. 구현 확인 사실은 `implemented`, 아직 구현되지 않은 승인 설계는 `accepted-target`으로 구분한다. 대표 소유 코드 경로와 해당 전술 설계 링크를 필요한 경우 둔다.
+- AS별 호출 순서·분기·실패 처리, 포트·트랜잭션 상세, 검색·평가 절차, 작업 진행 상황, AS 목록과 장문의 코드 줄·조사 증거는 이 문서에 옮기지 않는다. 상세는 `tactical-design.md`에, Context 사이 책임·관계는 `CONTEXT-MAP.md`에 둔다. 영향받는 기존 항목에서 이번 변경과 관련된 중복 설명은 요약하거나 해당 문서 링크로 바꾸고, 다른 모델과 프로젝트 고유 내용은 보존한다. 각 stage는 모델 자체가 바뀔 때만 이 문서를 갱신한다.
 - 지속되는 결정은 적용된 요소에서 `docs/adr/`의 구체적인 Markdown 파일이나 문서 절을 링크한다. 이미 같은 결정을 담은 ADR이 있으면 그 위치를 사용한다. 새로 기록할 때 결정, 근거(요구·답변 ID), 결과와 영향을 받는 경계를 적고 문서의 다른 결정을 보존한다. 실제로 바꾼 ADR·프로젝트 문서·클래스 다이어그램 파일은 결과의 workspace artifact에 개별 경로를 싣는다.
 - `domain_context_pack`이 있으면 먼저 후보를 확인한다. 상세는 `node .harness/scripts/harness-domain.mjs get <ID>...`로, 후보가 부족하면 `discover` 또는 `search`로 조회한다. 사용한 공통 정의 ID를 근거로 남긴다.
 
