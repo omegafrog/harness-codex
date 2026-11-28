@@ -444,6 +444,19 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
     await syncInstalledClaudeHook(targetRoot, { noBackup });
   }
   const copied_guidance = scope === 'all' ? await copyLegacyProjectGuidance(targetRoot) : [];
+  if (scope === 'all') {
+    const ignore = await containedPath(targetRoot, '.gitignore');
+    const text = await readFile(ignore.path, 'utf8').catch((error) => error.code === 'ENOENT' ? null : Promise.reject(error));
+    const marker = '# Harness project-owned agent documents';
+    if (text !== null && /^[ \t]*\/?\.harness\/?[ \t]*\r?$/m.test(text) && !text.includes(marker)) {
+      const backup = await containedPath(targetRoot, `${backupPrefix}/.gitignore`);
+      backup_directory ||= resolve(targetRoot, backupPrefix);
+      await mkdir(dirname(backup.path), { recursive: true, mode: 0o700 });
+      await writeFile(backup.path, text, { flag: 'wx', mode: 0o600 });
+      const rules = [marker, '/.harness/*', '!/.harness/agents/', '/.harness/agents/*', '!/.harness/agents/EXEC.md', '!/.harness/agents/execution.json', '!/.harness/agents/implementation-guidance.md', '!/.harness/agents/testing-guidance.md'];
+      await writeFile(ignore.path, text.replace(/^[ \t]*\/?\.harness\/?[ \t]*\r?$/m, rules.join('\n')));
+    }
+  }
   return { lock: nextLock, retired: actions.filter((action) => action.retired).map((action) => action.descriptor.target_path), updated: actions.filter((action) => !action.added && !action.retired).map((action) => action.descriptor.target_path), added: actions.filter((action) => action.added).map((action) => action.descriptor.target_path), skipped, removed_lock_entries, removed_directories, backup_directory, copied_guidance };
 }
 

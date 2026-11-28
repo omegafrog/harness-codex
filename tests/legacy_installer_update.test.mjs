@@ -10,6 +10,28 @@ import { inspectRetiredProjectHooks } from '../.harness/src/installer/orchestrat
 
 const retiredTierDirectory = ['.codex', 'internal-skills', ['skill', 'execution'].join('-')].join('/');
 
+test('installer makes project guidance visible under a broad Harness ignore', async () => {
+  const sourceRoot = process.cwd();
+  const session = resolve(sourceRoot, '.io/runtime/legacy-installer-tests');
+  await mkdir(session, { recursive: true });
+  const root = await mkdtemp(`${session}/ignore-`);
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    await writeFile(resolve(root, '.gitignore'), '/.harness/\n/build/\n');
+    await mkdir(resolve(root, '.harness/agents'), { recursive: true });
+    await writeFile(resolve(root, '.harness/agents/EXEC.md'), 'project commands');
+    await protectLocalInstallArtifacts(root, sourceRoot);
+    const result = await updateProject({ sourceRoot, targetRoot: root, initialize: true });
+    assert.equal(await readFile(resolve(root, '.harness/agents/EXEC.md'), 'utf8'), 'project commands');
+    assert.equal(await readFile(resolve(result.backup_directory, '.gitignore'), 'utf8'), '/.harness/\n/build/\n');
+    assert.throws(() => execFileSync('git', ['-C', root, 'check-ignore', '-q', '.harness/agents/EXEC.md']));
+    execFileSync('git', ['-C', root, 'check-ignore', '-q', '.harness/src/workflow/stage-commit.mjs']);
+    const once = await readFile(resolve(root, '.gitignore'), 'utf8');
+    await updateProject({ sourceRoot, targetRoot: root });
+    assert.equal(await readFile(resolve(root, '.gitignore'), 'utf8'), once);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test('legacy Doctor is backed up and updated while project files remain visible', async () => {
   const sourceRoot = process.cwd();
   const session = resolve(sourceRoot, '.io/runtime/legacy-installer-tests');
