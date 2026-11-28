@@ -3,7 +3,7 @@
 // sends it reading Harness source. So the default output holds only what the next step needs (ids, paths, status, the
 // next command, and the payloads that must be relayed), `--verbose` prints the full detail, and every error names what
 // happened, why, and the exact next command or the decision the user must make.
-import { DESIGN_APPROVAL_CHAIN, PRE_SPEC_STAGES, REQUIREMENTS_REVISION_STAGES, TACTICAL_DESIGN_STAGES, TACTICAL_IMPLEMENTATION_STAGES } from './worktree-stages.mjs';
+import { DESIGN_APPROVAL_PAIRS, PRE_SPEC_STAGES, REQUIREMENTS_REVISION_STAGES, TACTICAL_DESIGN_STAGES, TACTICAL_IMPLEMENTATION_STAGES } from './worktree-stages.mjs';
 import { cliContext, orchestratorState } from './cli-context.mjs';
 import { readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
@@ -279,10 +279,14 @@ export function finishNext({ status, code, stageId, executionId, ownerStage = nu
   if (status === 'blocked' && code === 'DEPENDENCY_INCOMPLETE' && ownerStage) return `Do not ask the user about this block. Go back to the owner automatically: ${call(ownerStage, `--reopen-for ${executionId}`)}. Follow each finish instruction during revalidation, including requirements approval after bounded-context.`;
   if (status === 'completed' && code === 'OK' && stageId === 'bounded-context' && requirementsPresent && requirementsRecheck?.applies && !requirementsRecheck.ok) return `Do not ask for the requirements approval yet: the runner rechecked requirements.md and it no longer passes the current requirements-fix rules (${requirementsRecheck.errors.length} error(s)). Tell the user in Korean, in one sentence: "${requirementsRecheck.notice_ko}" Then go back to the owner automatically: ${call('requirements-fix', `--reopen-for ${executionId}`)}. The runner hands the errors to the worker as the reason; this is not a user revision, so do not use --user-revision. Follow each finish instruction during revalidation, including requirements approval after bounded-context.`;
   if (status === 'completed' && code === 'OK' && stageId === 'bounded-context' && requirementsPresent) return `The requirements are fixed. Show the user result.summary (the approval summary) and the requirements.md path from artifacts, in Korean. Open requirements.md once and list its business rules (INV-*) and exceptions (EX-*) in the approval request under the heading "승인할 규칙", one line each, so the user can read what they approve; do not summarise them into counts.${requirementsDefaults.length ? ` The runner found ${requirementsDefaults.length} decision(s) made without asking the user (defaults_ko): show every line verbatim in the approval request under the heading "묻지 않고 정한 것", and say the user may change any of them.` : ''} Ask whether to approve before tactical design. If the user's reply carries a condition or leaves a stated undecided item open, confirm it with the user before sending it as approval. ${APPROVAL_REPLY_INSTRUCTION} ${approvalReply} (it starts domain-model with --requirements-approved true --approval-answer). ${provider === 'claude-code' ? 'For a requested change, pass the user\'s exact words as Agent(subagent_type: "workflow_stage", prompt: "harness-stage: revise <owning requirements stage-id>\\n<the user\'s change request verbatim>").' : "For a requested change, use --user-revision with the user's exact feedback at the earliest owning requirements stage."}`;
-  if (status === 'completed' && code === 'OK' && TACTICAL_DESIGN_STAGES.includes(stageId) && designApprovalNeeded) {
-    const target = DESIGN_APPROVAL_CHAIN[DESIGN_APPROVAL_CHAIN.indexOf(stageId) + 1];
+  if (status === 'completed' && code === 'OK' && designApprovalNeeded && DESIGN_APPROVAL_PAIRS.some(([source]) => source === stageId)) {
+    const target = DESIGN_APPROVAL_PAIRS.find(([source]) => source === stageId)[1];
     const change = provider === 'claude-code' ? 'pass their exact words as Agent(subagent_type: "workflow_stage", prompt: "harness-stage: revise <owning stage-id>\\n<verbatim>")' : call(stageId, "--user-revision true --feedback '<the user\'s exact words>'");
     return `${stageId} is complete. Do not start ${target} yet: it needs the user's approval of this result. Show the user result.summary and the artifact paths from artifacts, in Korean. Open this stage's section of the design document once and list every decision and interpretation it asks the user to check under the heading "확인할 결정·해석", one line each (say so if there is none). Ask whether to approve. If the user's reply carries a condition or leaves a stated undecided item open, confirm it before sending it as approval. ${APPROVAL_REPLY_INSTRUCTION} ${approvalReply} (it starts ${target} with --design-approved true --approval-answer). A change request is not approval: ${change}.`;
+  }
+  if (status === 'completed' && code === 'OK' && (TACTICAL_DESIGN_STAGES.includes(stageId) || ['tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data'].includes(stageId))) {
+    const sequence = [...TACTICAL_DESIGN_STAGES, ...TACTICAL_IMPLEMENTATION_STAGES];
+    return `Continue without asking for stage approval: ${call(sequence[sequence.indexOf(stageId) + 1])}. Show the result summary and artifact paths in Korean.`;
   }
   if (status === 'completed' && stageId === 'to-ticket') return `Show the user result.summary (the plan set summary) and the plan paths from artifacts, in Korean, and ask whether to publish it. ${APPROVAL_REPLY_INSTRUCTION} ${approvalReply} (it starts tracker-publish with --publication-approved true --approval-answer).`;
   if (status === 'completed' && ['tracker-publish', 'tactical-code'].includes(stageId)) return `Show result.summary and all artifact paths in Korean, including the ticket outcome when available. Ask for approval and wait; do not take another ticket or run completion before approval. Route approval with ${answerCall(provider, 'approve')}, which selects the next ticket or completion step.`;
@@ -313,7 +317,7 @@ export function compactFinished({ envelope, stageId, executionId, staleOrder = n
 }
 
 // The approval gates keep a longer summary: it is what the user approves, so the orchestrator never opens the document.
-const APPROVAL_GATES = new Set(['bounded-context', 'to-ticket', ...TACTICAL_DESIGN_STAGES]);
+const APPROVAL_GATES = new Set(['bounded-context', 'to-ticket', ...DESIGN_APPROVAL_PAIRS.map(([source]) => source)]);
 // Other stages' worker summaries are one line of 500-600 characters; the orchestrator must see what the stage decided.
 const SUMMARY_LINES = 6;
 const SUMMARY_WIDTH = 1200;

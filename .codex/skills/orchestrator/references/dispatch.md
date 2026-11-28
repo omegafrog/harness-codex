@@ -55,7 +55,7 @@ Claude Code 작업자는 최종 메시지로 제출하고 hook이 기록한다(�
 
 `to-ticket`과 `sync-contracts`는 아직 실행 중인 stage 작업자가 독립 리뷰 전에 해당 GUIDE의 `draft-ready`를 호출한다. 그 작업자가 위 배정을 사용해 writer를 시작하고 기다린 뒤 `finish`의 `review_ready`를 확인한다. 실행 중인 작업자가 작성된 초안을 리뷰하고 정식 결과를 제출한다. 오케스트레이터는 평소처럼 stage의 실제 완료를 기다렸다가 `finish`를 호출한다.
 
-`finish` 성공은 형식 검증 후 정본 결과를 기록한다. 보안 경계, workspace·실행 ID, 실제 승인과 결과 참조의 검증은 그대로 적용한다. `completed/OK`이면 `next`에 따라 요약과 모든 artifact 경로를 한국어로 보여 주고 사용자의 최종 승인을 기다린다. 승인 답은 `answer --intent approve`로 연결하며, 반환된 다음 stage만 시작한다. stale stage 재검증도 각 결과 승인을 거친다. 사용자 질문·리뷰·실패·중단은 해당 status와 code의 절차를 따르고, 질문의 원문과 실제 사용자 답을 보존한다. 사용자 요청으로 중단된 경우 늦게 도착한 결과로 진행을 재개하지 않는다.
+`finish` 성공은 형식 검증 후 정본 결과를 기록한다. 보안 경계, workspace·실행 ID, 실제 승인과 결과 참조의 검증은 그대로 적용한다. `completed/OK`이면 `next`에 따라 요약과 모든 artifact 경로를 한국어로 보여 준다. 전술 흐름은 도메인 모델·Aggregate·Application Service·통합·BC·데이터/인프라 확정에서만 승인을 기다린다. 승인 답은 `answer --intent approve`로 연결하며, 반환된 다음 stage만 시작한다. stale stage 재검증도 각 결과 승인을 거친다. 사용자 질문·리뷰·실패·중단은 해당 status와 code의 절차를 따르고, 질문의 원문과 실제 사용자 답을 보존한다. 사용자 요청으로 중단된 경우 늦게 도착한 결과로 진행을 재개하지 않는다.
 
 실패나 사용자 답변 뒤 새 실행을 예약하면 새 작업자가 이전 결과와 입력을 참조한다. 실행이 유지되는 형식 수정과 컨텍스트 압축은 기존 작업자에게 전달한다. 다른 CLI의 세션 ID를 넘기지 않는다. 단계별 독립 리뷰와 실제 E2E의 별도 승인 및 역할 요구사항은 해당 GUIDE를 따른다.
 
@@ -81,7 +81,7 @@ stage가 `blocked` / `DEPENDENCY_INCOMPLETE`를 반환하면 `result.owner_stage
 
 1. `finish`가 출력한 `next`의 명령 `node .harness/scripts/harness-native-stage.mjs launch --stage-id <owner_stage> --reopen-for <blocked execution_id>`를 실행한다. 다른 옵션은 함께 쓰지 않는다. 실행기는 해당 stage의 최신 결과가 `blocked` / `DEPENDENCY_INCOMPLETE`이고 그 `owner_stage`가 요청한 stage일 때만 허용한다(그 뒤 stage가 이미 시작됐거나 발행됐으면 거부).
 2. 문서와 산출물은 되돌리지 않는다. owner stage는 `dependency_gap_result` 입력과 gap 설명을 feedback으로 받아 기존 산출물을 앞으로 고친다. owner 뒤에 이미 `completed`였던 stage와 block된 stage는 상태에 `stale`로 기록되어 `completed/OK`로 인정되지 않는다.
-3. owner가 완료되면 `finish` 출력의 `next`가 산출물 요약과 승인을 요청한다. 사용자가 승인한 뒤 `answer --intent approve`가 가장 앞선 stale stage를 반환한다. 깨끗한 작업 트리와 정본 결과가 모두 같으면 검증자나 작업자를 다시 호출하기 전에 기존 완료 결과의 stale 표시를 해제한다. 차단됐거나 대기 중인 단계는 해당 절차로 처리한다. 공유 입력이 바뀌었거나 동일성을 확인할 수 없으면 영향받을 수 있는 단계를 유지한다. owner 다음 stage부터 block된 stage까지 각 결과를 사용자에게 보여 주고 승인받아 `launch --stage-id <stage>`를 순서대로 실행한다(옵션 불필요, 실행기가 "상위가 바뀌었으니 기존 산출물을 갱신하라"는 안내를 자동으로 붙인다). 순서를 어기면 오류가 다음 stage를 가리킨다. `bounded-context` 완료 뒤에는 남은 stale 결과가 있어도 기존 requirements 승인을 먼저 받는다. `tracker-publish`·`tactical-code`는 stale 상태에서 시작할 수 없다.
+3. owner가 완료되면 `finish` 출력의 `next`가 산출물 요약과 승인을 요청한다. 사용자가 승인한 뒤 `answer --intent approve`가 가장 앞선 stale stage를 반환한다. 깨끗한 작업 트리와 정본 결과가 모두 같으면 검증자나 작업자를 다시 호출하기 전에 기존 완료 결과의 stale 표시를 해제한다. 차단됐거나 대기 중인 단계는 해당 절차로 처리한다. 공유 입력이 바뀌었거나 동일성을 확인할 수 없으면 영향받을 수 있는 단계를 유지한다. owner 다음 stage부터 block된 stage까지 실행기의 승인 지점만 승인받아 `launch --stage-id <stage>`를 순서대로 실행한다(옵션 불필요, 실행기가 "상위가 바뀌었으니 기존 산출물을 갱신하라"는 안내를 자동으로 붙인다). 순서를 어기면 오류가 다음 stage를 가리킨다. `bounded-context` 완료 뒤에는 남은 stale 결과가 있어도 기존 requirements 승인을 먼저 받는다. `tracker-publish`·`tactical-code`는 stale 상태에서 시작할 수 없다.
 4. 마지막 전술 설계 stage(`context-boundary`)가 다시 완료될 때 전술 gate가, `tactical-data`가 다시 완료될 때 design-freeze gate가 다시 한 번 실행된다. `to-ticket`이 분할 중 이전 설계의 누락이나 모순을 발견하면 `owner_stage`를 지정한 `DEPENDENCY_INCOMPLETE`로 같은 forward-reopen 절차를 사용한다. 사용자가 이미 확정한 결정을 다시 묻지 않는다.
 5. 같은 gap으로 owner를 되돌린 결과가 다시 같은 block이면 새 근거 없이 반복하지 않고 사용자에게 보고한다.
 

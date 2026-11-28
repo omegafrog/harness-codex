@@ -14,7 +14,7 @@
 
 `domain-model` → `aggregate-design` → `domain-service` → `application-service` → `integration-design` → `context-boundary` 순서로 `docs/specs/<plan-set-id>/tactical-design.md`의 BC별 모델·Aggregate·업무 규칙·Application Service 메서드·트랜잭션·인터페이스를 채운다. 중요한 결정은 해당 구성요소에서 `docs/adr/`로 연결한다. stage 이름은 문서 이름이 아니다. 현재 양식은 각 stage가 소유한 부분을 완료 전에 검사하고 마지막 `context-boundary` 완료 때 `harness-domain-model-check.mjs`가 문서 전체를 검사한다. `gate_error`의 `owner_stage`는 문제 섹션을 소유한 단계다. [결과 처리](dispatch.md#결과-처리)를 적용한다. 신규 기능 흐름은 Product·Architecture Spec을 거치지 않는다.
 
-각 전술 설계 stage가 완료되면 자동으로 이어가지 않는다. `next`가 안내하는 대로 `result.summary`·artifact 경로와 그 stage 섹션의 확인할 결정·해석을 보여 주고, 사용자의 승인 답 원문을 `approve` 의도로 넘긴다(실행기가 다음 stage를 `--design-approved true --approval-answer '<사용자 답 원문>'`으로 시작한다). `context-boundary` 결과를 승인받아야 `tactical-technology`가 시작되고, 앞 stage를 다시 실행하면 새 승인이 필요하다.
+도메인 모델, Aggregate, Application Service, 통합 계약, BC 경계가 확정될 때 승인받는다. Domain Service는 별도 승인 없이 Application Service로 진행한다. 이후 데이터·인프라 바인딩이 확정되면 승인받고 티켓을 작성한다. 승인 지점에서는 `next`가 안내하는 대로 `result.summary`·artifact 경로와 확인할 결정·해석을 보여 주고, 사용자의 승인 답 원문을 `approve` 의도로 넘긴다(실행기가 다음 stage를 `--design-approved true --approval-answer '<사용자 답 원문>'`으로 시작한다). `context-boundary` 결과를 승인받아야 `tactical-technology`가 시작되고, 앞 stage를 다시 실행하면 새 승인이 필요하다.
 
 ## 전술 설계에서 구현까지
 

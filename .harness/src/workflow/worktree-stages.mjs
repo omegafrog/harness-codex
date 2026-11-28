@@ -118,9 +118,14 @@ export const TACTICAL_IMPLEMENTATION_STAGES = Object.freeze([
 export const isCurrentStage = (entry) => entry?.status === 'completed' && entry.code === 'OK' && !entry.stale;
 
 // Starting the stage after a tactical design stage needs the user's approval of that stage's current result.
-export const DESIGN_APPROVAL_CHAIN = Object.freeze([...TACTICAL_DESIGN_STAGES, WORKTREE_STAGE.TACTICAL_TECHNOLOGY]);
+export const DESIGN_APPROVAL_PAIRS = Object.freeze([
+  ['domain-model', 'aggregate-design'], ['aggregate-design', 'domain-service'],
+  ['application-service', 'integration-design'], ['integration-design', 'context-boundary'],
+  ['context-boundary', 'tactical-technology'], ['tactical-data', 'to-ticket'],
+]);
+export const DESIGN_APPROVAL_CHAIN = Object.freeze(DESIGN_APPROVAL_PAIRS.flat());
 
-export const designApprovalSource = (stageId) => DESIGN_APPROVAL_CHAIN[DESIGN_APPROVAL_CHAIN.indexOf(stageId) - 1] ?? null;
+export const designApprovalSource = (stageId) => DESIGN_APPROVAL_PAIRS.find(([, target]) => target === stageId)?.[0] ?? null;
 
 // True when the stage already holds approval of its predecessor's current execution. A start recorded before approvals
 // existed has no receipt and counts when it began after the predecessor finished.
@@ -134,12 +139,12 @@ export function designApprovalCovers(stages, stageId) {
 
 // The stage that waits for the user's approval of `sourceId`, or null.
 export function designApprovalTarget(stages, sourceId) {
-  if (!TACTICAL_DESIGN_STAGES.includes(sourceId) || !isCurrentStage(stages?.[sourceId])) return null;
-  const target = DESIGN_APPROVAL_CHAIN[DESIGN_APPROVAL_CHAIN.indexOf(sourceId) + 1];
+  const target = DESIGN_APPROVAL_PAIRS.find(([source]) => source === sourceId)?.[1];
+  if (!target || !isCurrentStage(stages?.[sourceId])) return null;
   return isCurrentStage(stages?.[target]) || designApprovalCovers(stages, target) ? null : target;
 }
 
-export const pendingDesignApproval = (stages) => TACTICAL_DESIGN_STAGES.map((id) => designApprovalTarget(stages, id)).find(Boolean) ?? null;
+export const pendingDesignApproval = (stages) => DESIGN_APPROVAL_PAIRS.map(([id]) => designApprovalTarget(stages, id)).find(Boolean) ?? null;
 
 export function tacticalImplementationOrderViolation(stages, stageId) {
   const index = TACTICAL_IMPLEMENTATION_STAGES.indexOf(stageId);

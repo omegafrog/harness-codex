@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { assertDesignApproval } from '../.harness/src/workflow/user-inputs.mjs';
 import { resolveApproval, resolveReplyTarget, resolveRevision } from '../.harness/src/workflow/answer-text.mjs';
 import { explainError, finishNext } from '../.harness/src/workflow/stage-cli.mjs';
-import { DESIGN_APPROVAL_CHAIN, PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES, pendingDesignApproval } from '../.harness/src/workflow/worktree-stages.mjs';
+import { DESIGN_APPROVAL_PAIRS, PRE_SPEC_STAGES, TACTICAL_DESIGN_STAGES, pendingDesignApproval } from '../.harness/src/workflow/worktree-stages.mjs';
 import { consumerWorkflow } from './support/consumer-workflow.mjs';
 import { codexUserPrompt } from './support/codex-user-prompt.mjs';
 
@@ -53,48 +53,18 @@ test('each design stage after domain-model and tactical-technology needs approva
   await check(rerun, { stage_id: 'domain-model', execution_id: 'domain-model-rerun', answer: '다시 만든 설계를 승인합니다' });
 });
 
-test('a declared approval launches the next stage', () => {
-  for (const [index, source] of TACTICAL_DESIGN_STAGES.entries()) {
-    const target = DESIGN_APPROVAL_CHAIN[index + 1];
-    const stages = Object.fromEntries(TACTICAL_DESIGN_STAGES.slice(0, index + 1).map((id, i) => [id, done(`${id}-1`, 10 + i, i ? { design_approval: { stage_id: TACTICAL_DESIGN_STAGES[i - 1], execution_id: `${TACTICAL_DESIGN_STAGES[i - 1]}-1` } } : {})]));
+test('approval points route to the selected next stage', () => {
+  for (const [source, target] of DESIGN_APPROVAL_PAIRS) {
+    const stages = { [source]: done(`${source}-1`, 10) };
     const routed = resolveApproval({ stages }, '승인합니다');
-    assert.deepEqual(routed, { stageId: target, args: ['--stage-id', target, '--design-approved', 'true', '--approval-answer', '승인합니다'], approval: 'design' }, source);
-    const stale = { ...stages, [target]: done(`${target}-0`, '01', { stale: { owner_stage: source }, design_approval: { stage_id: source, execution_id: `${source}-0` } }) };
-    assert.equal(resolveApproval({ stages: stale }, '승인합니다').stageId, target, 'a rerun needs a new approval');
+    assert.equal(routed.stageId, target, source);
+    assert.equal(routed.approval, 'design');
+    assert.match(finishNext({ status: 'completed', code: 'OK', stageId: source, executionId: source }), /Do not start/);
   }
-});
-
-test('a completed design stage asks for approval and a refusal explains how to get it', () => {
-  for (const [index, stageId] of TACTICAL_DESIGN_STAGES.entries()) {
-    const target = DESIGN_APPROVAL_CHAIN[index + 1];
-    for (const provider of ['codex', 'claude-code']) {
-      const next = finishNext({ status: 'completed', code: 'OK', stageId, executionId: `${stageId}-1`, provider });
-      assert.ok(next.includes(`Do not start ${target} yet`), next);
-      assert.match(next, /result\.summary and the artifact paths/);
-      assert.match(next, /확인할 결정·해석/);
-      assert.match(next, provider === 'codex' ? /--user-revision true/ : /harness-stage: revise/);
-      const genericGate = finishNext({ status: 'completed', code: 'OK', stageId, executionId: `${stageId}-1`, provider, designApprovalNeeded: false });
-      assert.doesNotMatch(genericGate, new RegExp(`Do not start ${target} yet`));
-      assert.match(genericGate, /ask for approval and wait/);
-    }
-  }
-  const explained = explainError(Object.assign(new Error('Design approval answer was not recorded: no reply'), { design_stage: 'domain-service' }), { stage: 'domain-service' });
-  assert.match(JSON.stringify(explained), /--stage-id domain-service[^"]*--design-approved true/);
-});
-
-test('every ordinary completed stage presents its artifacts and waits for approval before routing onward', () => {
-  for (const [stageId, nextStage] of [['stakeholder-analysis', 'subdomain-candidates'], ['tactical-api', 'tactical-data']]) {
-    const next = finishNext({ status: 'completed', code: 'OK', stageId, executionId: `${stageId}-1` });
-    assert.match(next, /result\.summary and all artifact paths/);
-    assert.match(next, /ask for approval and wait/);
-    assert.match(next, /do not start another stage before approval/);
-    assert.match(next, /answer --text .*--intent approve/);
-    assert.ok(nextStage);
-  }
-  for (const stageId of ['tracker-publish', 'tactical-code']) {
-    const next = finishNext({ status: 'completed', code: 'OK', stageId, executionId: `${stageId}-1` });
-    assert.match(next, /result\.summary and all artifact paths/);
-    assert.match(next, /do not take another ticket or run completion before approval/);
+  for (const [stageId, target] of [['domain-service', 'application-service'], ['tactical-technology', 'tactical-ui'], ['tactical-ui', 'tactical-api'], ['tactical-api', 'tactical-data']]) {
+    const next = finishNext({ status: 'completed', code: 'OK', stageId, executionId: stageId, designApprovalNeeded: false });
+    assert.match(next, /without asking for stage approval/);
+    assert.ok(next.includes(target));
   }
 });
 
@@ -123,6 +93,11 @@ test('after a requirements reopen the stale design stages are approved again one
   for (const id of design) assert.ok((await read()).stages[id].stale, id);
   let minute = 0;
   for (const [index, target] of design.entries()) {
+    if (target === 'application-service') {
+      await runStage(target, skipped);
+      assert.equal((await read()).stages[target].stale, undefined, target);
+      continue;
+    }
     const reply = '승인하고 계속 해봐';
     const revised = resolveRevision(workspace, '삭제 규칙을 바꿔 줘', 'requirements-fix');
     assert.equal(revised.revision, true, target);
