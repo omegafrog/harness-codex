@@ -24,25 +24,10 @@
 
 ### 도메인 모델
 
-| 모델 | 종류 | 업무 | 식별자 |
-|---|---|---|---|
-| Post | Entity | BIZ-01 | postId |
-| PostBody | Value Object | BIZ-01 | 해당 없음 — 값으로 비교 |
-
-#### 필드·구성 값
-
-- **Post**
-  - `postId: PostId` — 게시글 식별자
-  - `body: PostBody` — 글 본문
-- **PostBody**
-  - `text: String` — 본문. 비어 있을 수 없음(INV-01)
-
-#### 메서드
-
-- **Post**
-  - `create(postId: PostId, body: PostBody) → Post` — 게시글을 만든다
-- **PostBody**
-  - `from(text: String) → PostBody` — 빈 본문을 거절한다(INV-01)
+| 모델 | 종류 | 업무 | 식별자 | 필드·구성 값 | 메서드 |
+|---|---|---|---|---|---|
+| Post | Entity | BIZ-01 | postId | <ul><li><code>postId: PostId</code> — 게시글 식별자</li><li><code>body: PostBody</code> — 글 본문</li></ul> | <ul><li><code>create(postId: PostId, body: PostBody) → Post</code> — 게시글을 만든다</li></ul> |
+| PostBody | Value Object | BIZ-01 | 해당 없음 — 값으로 비교 | <ul><li><code>text: String</code> — 본문. 비어 있을 수 없음(INV-01)</li></ul> | <ul><li><code>from(text: String) → PostBody</code> — 빈 본문을 거절한다(INV-01)</li></ul> |
 
 ### Aggregate
 
@@ -77,7 +62,7 @@
 - 근거는 독자가 결정을 확인해야 하거나 실행기 gate가 요구하는 위치에만 쓴다. 규칙 책임 표에는 각 행마다 `requirements.md` 또는 실제 승인 답변 `answers.json` 링크 하나를 둔다. 규칙 ID는 책임 표에서만 정의하고 모델·Aggregate·AS 설명에서 다시 출처와 함께 풀어 쓰지 않는다. 상세 조건은 링크된 요구사항을 참조하고, 표에는 이 단계에서 필요한 핵심 판정만 요약한다. 같은 근거를 여러 행이나 문단에 복제하지 않는다.
 - 기존 코드 조사는 설계 결정에 필요한 사실을 확인하는 입력이다. 본문에는 확인한 파일·줄·commit, 검색 과정이나 도구 상태를 보고하지 않는다. 구현과 목표 설계의 차이가 계약을 이해하는 데 영향을 줄 때만 차이를 한 문장으로 적고, 상세 추적은 별도 증거 문서가 이미 있는 경우 그 문서로 연결한다.
 - 확정된 각 BC를 `## BC <context-id>`로 한 번만 쓴다. 식별자는 확정된 소문자 slug를 사용한다. 제목 아래 구성은 실제 설계에 필요한 것만 둔다. 해당 구성이나 클래스 모델이 없으면 이유를 적는다.
-- Entity는 식별자 이름과 타입, 정체성과 생애주기, 업무 상태를 표현하는 필드를 둔다. `식별자`는 필드 목록에 선언한 이름이다. 필드·구성 값과 메서드는 각각 별도 절에서 모델별 하위 bullet list로 작성한다. 필드는 `필드: 타입 — 뜻`, 메서드는 `이름(타입이 있는 입력) → 결과 타입 — 상태 변화·실패 효과` 형식으로 적는다.
+- Entity는 식별자 이름과 타입, 정체성과 생애주기, 업무 상태를 표현하는 필드를 둔다. `식별자`는 필드 목록에 선언한 이름이다. 필드·구성 값과 메서드는 도메인 모델 표의 각 셀 안에 HTML `<ul><li>` bullet list로 적는다. 필드는 `필드: 타입 — 뜻`, 메서드는 `이름(타입이 있는 입력) → 결과 타입 — 상태 변화·실패 효과` 형식으로 쓴다. 셀 안에서 `<br>`로 항목을 나열하지 않는다.
 - Value Object는 ID 대신 값의 의미, 구성 속성·타입·제약, 포함하는 Entity 또는 다른 Value Object를 식별한다. 제약을 강제하는 생성·변환 메서드를 명시한다. Domain Service는 모델 표에 `Domain Service`로 기입하고 상태가 없을 때만 필드 사유를 표시한다. 외부 소유 규칙은 모델 종류를 `외부 시스템`으로 쓰고 실제 공개 메서드나 계약을 선언한다. `업무`는 모델이 책임지는 BIZ를 적는다. BIZ 전체를 외부 시스템이 담당할 때만 그 외부 모델의 BIZ 행으로 Application Service를 대신한다.
 - Aggregate는 Root, Entity·Value Object 멤버, 다른 Aggregate의 식별자 참조를 적는다. 클래스 다이어그램에서 Aggregate 경계와 내부 구성, 멤버의 타입과 메서드, 다른 Aggregate를 참조하는 ID와 방향을 나타낸다. 실제 Aggregate 구조가 없는 BC는 이유 한 줄로 설명한다.
 - 규칙 책임 표의 각 INV·EX에는 간결한 판정, 요구사항 또는 승인 답변 링크 하나, 소유자 하나와 그 모델에 선언된 담당 메서드 하나를 연결한다. 규칙 전문을 복사하지 말고 설계에 영향 주는 조건·불변식·예외·결과만 요약한다. 필요한 정보가 없거나 상충하면 [소유 stage 반환 규칙](deepening.md)을 따른다.
