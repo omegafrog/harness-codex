@@ -160,6 +160,10 @@ test('installed consumers get the tactical design assets, Git ignores them and k
   await writeFile(join(root, 'docs/specs/community/requirements.md'), currentRequirements);
   await writeFile(join(root, currentPath), current);
   assert.equal(gate().status, 0, gate().stdout);
+  await writeFile(join(root, currentPath), current.replace('<li><code>text: String</code>', '<li>포함 위치 — 게시글 본문</li><li><code>text: String</code>'));
+  assert.equal(gate().status, 0, 'Value Object inclusion metadata is not a field');
+  await writeFile(join(root, currentPath), current.replace('<li><code>text: String</code> — 본문. 비어 있을 수 없음(INV-01)</li>', '<li>포함 위치 — 게시글 본문</li>'));
+  assert.ok(JSON.parse(gate().stdout).errors.some(({ code }) => code === 'MODEL_FIELDS_INCOMPLETE'), 'inclusion metadata cannot replace typed fields');
   await writeFile(join(root, currentPath), current.replace('| PostBody.from |', '| PostBody.missing |'));
   assert.equal(JSON.parse(gate().stdout).errors[0].code, 'RULE_METHOD_UNKNOWN');
   await writeFile(join(root, currentPath), current.replace('<li><code>postId: PostId</code> — 게시글 식별자</li>', ''));

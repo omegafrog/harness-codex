@@ -157,9 +157,11 @@ function checkContextDesign(requirements, contexts) {
       localModels.set(name, row);
       const entity = kindOf(row) === 'Entity';
       const fields = linesOf(row['필드·구성 값']);
+      const valueObject = /^(VO|Value Object)$/.test(kindOf(row));
+      const typedFields = valueObject ? fields.filter((item) => !/^포함 위치\s*[—–-]\s*\S/.test(item)) : fields;
       const identity = clean(row['식별자']);
       if ((entity && (!identity || !fields.some((field) => field.split(':')[0].trim() === identity)))
-        || ((entity || /^(VO|Value Object)$/.test(kindOf(row))) && (!fields.length || !fields.every((field) => /^[^:]+:\s*\S.*\s[—–-]\s\S/.test(field))))) {
+        || ((entity || valueObject) && (!typedFields.length || !typedFields.every((field) => /^[^:]+:\s*\S.*\s[—–-]\s\S/.test(field))))) {
         modelFailure('MODEL_FIELDS_INCOMPLETE', `${name} needs named, typed fields or values with descriptions, including identity for an Entity`, name);
       }
       const methods = linesOf(row['메서드']);
