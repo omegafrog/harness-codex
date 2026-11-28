@@ -119,9 +119,7 @@ export const isCurrentStage = (entry) => entry?.status === 'completed' && entry.
 
 // Starting the stage after a tactical design stage needs the user's approval of that stage's current result.
 export const DESIGN_APPROVAL_PAIRS = Object.freeze([
-  ['domain-model', 'aggregate-design'], ['aggregate-design', 'domain-service'],
-  ['application-service', 'integration-design'], ['integration-design', 'context-boundary'],
-  ['context-boundary', 'tactical-technology'], ['tactical-data', 'to-ticket'],
+  ['tactical-data', 'to-ticket'],
 ]);
 export const DESIGN_APPROVAL_CHAIN = Object.freeze(DESIGN_APPROVAL_PAIRS.flat());
 

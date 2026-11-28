@@ -14,11 +14,11 @@
 
 `domain-model` → `aggregate-design` → `domain-service` → `application-service` → `integration-design` → `context-boundary` 순서로 `docs/specs/<plan-set-id>/tactical-design.md`의 BC별 모델·Aggregate·업무 규칙·Application Service 메서드·트랜잭션·인터페이스를 채운다. 중요한 결정은 해당 구성요소에서 `docs/adr/`로 연결한다. stage 이름은 문서 이름이 아니다. 현재 양식은 각 stage가 소유한 부분을 완료 전에 검사하고 마지막 `context-boundary` 완료 때 `harness-domain-model-check.mjs`가 문서 전체를 검사한다. `gate_error`의 `owner_stage`는 문제 섹션을 소유한 단계다. [결과 처리](dispatch.md#결과-처리)를 적용한다. 신규 기능 흐름은 Product·Architecture Spec을 거치지 않는다.
 
-도메인 모델, Aggregate, Application Service, 통합 계약, BC 경계가 확정될 때 승인받는다. Domain Service는 별도 승인 없이 Application Service로 진행한다. 이후 데이터·인프라 바인딩이 확정되면 승인받고 티켓을 작성한다. 승인 지점에서는 `next`가 안내하는 대로 `result.summary`·artifact 경로와 확인할 결정·해석을 보여 주고, 사용자의 승인 답 원문을 `approve` 의도로 넘긴다(실행기가 다음 stage를 `--design-approved true --approval-answer '<사용자 답 원문>'`으로 시작한다). `context-boundary` 결과를 승인받아야 `tactical-technology`가 시작되고, 앞 stage를 다시 실행하면 새 승인이 필요하다.
+전술 설계의 중간 단계는 승인 없이 이어간다. 기술·UI·API·데이터 결정까지 끝난 후 전체 설계와 관련 문서 경로를 보여 주고 한 번 승인받는다. 승인 답 원문을 `approve` 의도로 넘기면 실행기가 `to-ticket`을 시작한다. 수정으로 설계가 바뀌면 완료된 전체 설계를 다시 승인받는다.
 
 ## 전술 설계에서 구현까지
 
-전술 설계가 모두 `completed/OK`이고 마지막 설계 승인을 받은 뒤 별도 `tactical-to-code` workflow를 시작한다. 순서는 `tactical-technology` → `tactical-ui` → `tactical-api` → `tactical-data` → `to-ticket` → `tracker-publish` → `tactical-code`다. 실행기는 전술 설계와 앞 단계 완료를 확인한다. 이 흐름은 요구사항 롤백에 포함되지 않으므로 그 롤백은 애플리케이션 코드를 복원하거나 삭제하지 않는다.
+전술 설계가 모두 `completed/OK`이면 중간 승인 없이 별도 `tactical-to-code` workflow를 시작한다. 순서는 `tactical-technology` → `tactical-ui` → `tactical-api` → `tactical-data` → `to-ticket` → `tracker-publish` → `tactical-code`다. 실행기는 전술 설계와 앞 단계 완료를 확인한다. 이 흐름은 요구사항 롤백에 포함되지 않으므로 그 롤백은 애플리케이션 코드를 복원하거나 삭제하지 않는다.
 
 - `tactical-technology`는 기존 기술을 먼저 평가하고 필요한 선택에 근거를 붙인다. `tactical-ui`에서 화면 설계가 필요하면 독립 `frontend-design` workflow의 `frontend-design-brief` stage로 [인계](dispatch.md#ui-적용과-보류)한다. 계획에 UI 변경이 없거나 사용자가 보류하면 UI 스킬 없이 API·데이터 설계를 진행한다. `tactical-api`는 application entry와 API, `tactical-data`는 저장·데이터 소유·인프라 바인딩을 정한다.
 - 전술 설계와 구현 결정은 기존 BIZ·INV·EX·AC를 근거로 한다. `tactical-data` 완료 때 `harness-design-freeze-check.mjs`가 API·데이터·UI 설계의 추적과 요구 적용 범위를 검증한다. `UNTRACED_ITEM`·`REQUIREMENT_UNCOVERED`가 나면 실행기가 소유 stage를 알려 준다. 통과한 뒤 `to-ticket`은 확정된 설계를 컨텍스트와 업무별 vertical ticket으로 나누고 fresh `plan_reviewer`의 독립 리뷰를 받는다.

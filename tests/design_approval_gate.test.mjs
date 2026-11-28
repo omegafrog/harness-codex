@@ -15,42 +15,16 @@ const REFUSED = /Design approval answer was not recorded/;
 const flags = (answer) => ['--design-approved', 'true', '--approval-answer', answer];
 const done = (id, minute, extra = {}) => ({ status: 'completed', code: 'OK', execution_id: id, started_at: `2026-11-26T09:${minute}:00.000Z`, finished_at: `2026-11-26T09:${minute}:30.000Z`, ...extra });
 
-test('each design stage after domain-model and tactical-technology needs approval of the previous current result', async (t) => {
-  const flow = await consumerWorkflow(t, '게시글 삭제 기능을 추가해줘');
-  const { workspace, runStage, specPath } = flow;
-  const analysis = specPath('stakeholder-analysis.md');
-  await runStage('stakeholder-analysis', { files: { [analysis]: '# Stakeholder 분석\n\n- 판정: 생략\n- 근거: 기존 승인 Spec의 업무 하나 안의 변경\n' }, artifacts: [{ path: analysis, kind: 'stakeholder_analysis' }], summary: '생략 판정' });
-  const skipped = { summary: `생략: stakeholder-analysis 판정 생략 (${analysis})`, expectCommit: false };
-  for (const stage of PRE_SPEC_STAGES.slice(1, PRE_SPEC_STAGES.indexOf('domain-model') + 1)) await runStage(stage, skipped);
-
-  const refuse = (args, why) => {
-    const result = spawnSync(process.execPath, [join(workspace, '.harness/scripts/harness-prepare-input.mjs'), '--verbose', '--stage-id', 'aggregate-design', ...args], { cwd: workspace, encoding: 'utf8' });
-    assert.notEqual(result.status, 0, why);
-    assert.match(result.stdout + result.stderr, REFUSED, why);
-    return result.stdout + result.stderr;
-  };
-  assert.match(refuse([], 'a plain launch is refused'), /ask the user/i);
-  refuse(flags('설계를 승인합니다'), 'words the user never said are refused');
-  await codexUserPrompt(workspace, '설계를 승인합니다');
-  const first = await runStage('aggregate-design', { ...skipped, extraArgs: flags('설계를 승인합니다') });
-  assert.equal(first.prepared.input.context.design_approval.stage_id, 'domain-model');
-  const statePath = join(workspace, '.io/runtime/orchestrator/state.json');
-  const read = async () => JSON.parse(await readFile(statePath, 'utf8'));
-  let state = await read();
-  const receipt = state.stages['aggregate-design'].design_approval;
-  assert.deepEqual(receipt, { stage_id: 'domain-model', execution_id: state.stages['domain-model'].execution_id, answer: '설계를 승인합니다' });
-
-  // The recorded approval covers a retry of the same stage, and stops covering once the previous stage has a new result.
-  const check = (stages, approval = null) => assertDesignApproval({ root: workspace, state: { stages }, stage: 'aggregate-design', planSetId: flow.planSetId, approval });
-  const retry = { ...state.stages, 'aggregate-design': { ...state.stages['aggregate-design'], status: 'failed', code: 'STAGE_FAILED' } };
-  await check(retry);
-  assert.equal(pendingDesignApproval({ 'domain-model': retry['domain-model'], 'aggregate-design': retry['aggregate-design'] }), null);
-  const rerun = { ...retry, 'domain-model': { ...retry['domain-model'], execution_id: 'domain-model-rerun', finished_at: new Date().toISOString() } };
-  await assert.rejects(check(rerun), REFUSED);
-  await assert.rejects(check(rerun, receipt), REFUSED);
-  await assert.rejects(check(rerun, { ...receipt, execution_id: 'domain-model-rerun' }), REFUSED, 'a reply sent before the rerun finished does not approve it');
-  await codexUserPrompt(workspace, '다시 만든 설계를 승인합니다', { at: new Date(Date.now() + 1000).toISOString() });
-  await check(rerun, { stage_id: 'domain-model', execution_id: 'domain-model-rerun', answer: '다시 만든 설계를 승인합니다' });
+test('only the completed design requires approval before tickets', async () => {
+  const stages = { 'tactical-data': done('data-1', 10) };
+  await assert.rejects(assertDesignApproval({ root: process.cwd(), state: { stages }, stage: 'to-ticket', planSetId: 'set' }), REFUSED);
+  for (const stage of ['aggregate-design', 'domain-service', 'application-service', 'integration-design', 'context-boundary', 'tactical-technology', 'tactical-ui', 'tactical-api', 'tactical-data']) {
+    await assertDesignApproval({ root: process.cwd(), state: { stages }, stage, planSetId: 'set' });
+  }
+  assert.equal(pendingDesignApproval(stages), 'to-ticket');
+  const covered = { ...stages, 'to-ticket': { ...done('ticket-1', 11), design_approval: { stage_id: 'tactical-data', execution_id: 'data-1' } } };
+  assert.equal(pendingDesignApproval(covered), null);
+  await assert.rejects(assertDesignApproval({ root: process.cwd(), state: { stages: { ...covered, 'tactical-data': done('data-2', 12) } }, stage: 'to-ticket', planSetId: 'set' }), REFUSED);
 });
 
 test('approval points route to the selected next stage', () => {
@@ -61,7 +35,7 @@ test('approval points route to the selected next stage', () => {
     assert.equal(routed.approval, 'design');
     assert.match(finishNext({ status: 'completed', code: 'OK', stageId: source, executionId: source }), /Do not start/);
   }
-  for (const [stageId, target] of [['domain-service', 'application-service'], ['tactical-technology', 'tactical-ui'], ['tactical-ui', 'tactical-api'], ['tactical-api', 'tactical-data']]) {
+  for (const [stageId, target] of [['domain-model', 'aggregate-design'], ['aggregate-design', 'domain-service'], ['domain-service', 'application-service'], ['application-service', 'integration-design'], ['integration-design', 'context-boundary'], ['context-boundary', 'tactical-technology'], ['tactical-technology', 'tactical-ui'], ['tactical-ui', 'tactical-api'], ['tactical-api', 'tactical-data']]) {
     const next = finishNext({ status: 'completed', code: 'OK', stageId, executionId: stageId, designApprovalNeeded: false });
     assert.match(next, /without asking for stage approval/);
     assert.ok(next.includes(target));
@@ -76,7 +50,7 @@ test('a generic stage approval routes to its next stage', () => {
   assert.equal(resolveApproval({ current_stage: 'stakeholder-analysis', stages: stale }, '승인').stageId, 'ubiquitous-language');
 });
 
-test('after a requirements reopen the stale design stages are approved again one by one through application-service', async (t) => {
+test('after a requirements reopen design stages resume without intermediate approvals', async (t) => {
   const flow = await consumerWorkflow(t, '게시글 삭제 기능을 추가해줘');
   const { workspace, runStage, specPath } = flow;
   const analysis = specPath('stakeholder-analysis.md');
@@ -93,7 +67,7 @@ test('after a requirements reopen the stale design stages are approved again one
   for (const id of design) assert.ok((await read()).stages[id].stale, id);
   let minute = 0;
   for (const [index, target] of design.entries()) {
-    if (target === 'application-service') {
+    if (index > 0) {
       await runStage(target, skipped);
       assert.equal((await read()).stages[target].stale, undefined, target);
       continue;
