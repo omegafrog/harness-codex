@@ -107,7 +107,12 @@ export function parseRequirements(text) {
 // rule, Domain Service, 외부 시스템) enforces the rule.
 const noBehavior = (value) => isBlank(value) || /^(해당 )?없음(\s*[—–-].*)?$/.test(clean(value));
 
-const linesOf = (value) => String(value ?? '').split(/<br\s*\/?>/i).map(clean);
+const linesOf = (value) => {
+  const text = String(value ?? '');
+  const list = [...text.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li\s*>/gi)];
+  if (list.length) return list.map((item) => clean(item[1].replace(/<[^>]+>/g, '')));
+  return text.split(/<br\s*\/?>/i).map(clean);
+};
 const methodName = (value) => clean(value).split('(')[0].split('.').at(-1).trim();
 const methodSignature = /\S+\([^)]*\)\s*(?:→|->)\s*\S/;
 const kindOf = (row) => clean(row['종류']);

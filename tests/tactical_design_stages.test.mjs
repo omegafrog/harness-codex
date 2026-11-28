@@ -162,7 +162,7 @@ test('installed consumers get the tactical design assets, Git ignores them and k
   assert.equal(gate().status, 0, gate().stdout);
   await writeFile(join(root, currentPath), current.replace('| PostBody.from |', '| PostBody.missing |'));
   assert.equal(JSON.parse(gate().stdout).errors[0].code, 'RULE_METHOD_UNKNOWN');
-  await writeFile(join(root, currentPath), current.replace('postId: PostId — 게시글 식별자<br>', ''));
+  await writeFile(join(root, currentPath), current.replace('<li><code>postId: PostId</code> — 게시글 식별자</li>', ''));
   assert.equal(JSON.parse(gate().stdout).errors[0].code, 'MODEL_FIELDS_INCOMPLETE');
   await writeFile(join(root, currentPath), current.replace(/^\| AS-01.*\n/m, ''));
   assert.ok(JSON.parse(gate().stdout).errors.some(({ code }) => code === 'BIZ_WITHOUT_APPLICATION_METHOD'));
@@ -172,7 +172,7 @@ test('installed consumers get the tactical design assets, Git ignores them and k
   const installedGate = await import(pathToFileURL(join(root, GATE_LIBRARY)));
   const workspaceGate = () => installedGate.checkWorkspaceTacticalDesign({ root, planSetId: 'community' });
   const stageGate = (skill) => installedGate.evaluateTacticalDesignGate({ root, input: { skill, context: { plan_set_id: 'community' } }, envelope: { status: 'completed', code: 'OK' } });
-  await writeFile(join(root, currentPath), current.replace('postId: PostId — 게시글 식별자<br>', ''));
+  await writeFile(join(root, currentPath), current.replace('<li><code>postId: PostId</code> — 게시글 식별자</li>', ''));
   assert.deepEqual((await stageGate('domain-model')).errors.map(({ code }) => code), ['MODEL_FIELDS_INCOMPLETE']);
   await writeFile(join(root, currentPath), current.replace('| PostBody.from |', '| PostBody.missing |'));
   assert.ok((await stageGate('aggregate-design')).errors.some(({ code }) => code === 'RULE_METHOD_UNKNOWN'));
